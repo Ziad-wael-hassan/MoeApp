@@ -152,8 +152,8 @@ export const commandHandlers = {
     try {
       const quotedMessage = await message.getQuotedMessage();
       const text = quotedMessage.body;
-      const audio = await textToSpeech(text);
-      const media = new MessageMedia(audio.mimeType, audio.base64);
+      const { base64, mimeType } = await textToSpeech(text);
+      const media = new MessageMedia(mimeType, base64);
       
       await message.reply(media, { sendAudioAsVoice: true });
     } catch (error) {
