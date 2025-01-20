@@ -10,37 +10,44 @@ import { env } from "../../config/env.js";
 
 const { MessageMedia } = WhatsAppWeb;
 
-const MESSAGE_LENGTH_THRESHOLD = 300; // Messages longer than this will get TTS
+const MESSAGE_LENGTH_THRESHOLD = 300;
 
-async function forwardToWebhooks(message) {
-  if (!env.WEBHOOK_URLS?.length) return;
+// Commands that use recording status instead of typing
+const AUDIO_COMMANDS = new Set(['speak']);
 
-  const webhookData = {
-    messageId: message.id,
-    from: message.from,
-    to: message.to,
-    body: message.body,
-    timestamp: message.timestamp,
-  };
+// Helper for managing chat states
+const ChatState = {
+  async setTyping(chat) {
+    try {
+      await chat.sendStateTyping();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to set typing state");
+    }
+  },
+  
+  async setRecording(chat) {
+    try {
+      await chat.sendStateRecording();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to set recording state");
+    }
+  },
+  
+  async clear(chat) {
+    try {
+      await chat.clearState();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to clear chat state");
+    }
+  }
+};
 
-  await Promise.allSettled(
-    env.WEBHOOK_URLS.map((url) =>
-      axios
-        .post(url, webhookData, {
-          headers: { "Content-Type": "application/json" },
-          timeout: 5000,
-        })
-        .catch((error) => {
-          logger.error({ err: error }, `Webhook delivery failed for ${url}`);
-        }),
-    ),
-  );
-}
 
 async function shouldUseAI() {
   const setting = await Settings.findOne({ key: "ai_enabled" });
   return setting?.value ?? false;
 }
+
 
 async function generateVoiceIfNeeded(text, message) {
   if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
@@ -51,6 +58,26 @@ async function generateVoiceIfNeeded(text, message) {
     } catch (error) {
       logger.error({ err: error }, "Error generating voice for message");
     }
+  }
+}
+// Helper to determine if a command will provide a response
+function commandWillRespond(command, args, hasQuotedMsg) {
+  switch (command) {
+    case 'help':
+    case 'toggleai':
+    case 'togglecmd':
+    case 'logs':
+      return true;
+    case 'pfp':
+      return args.length > 0 || hasQuotedMsg;
+    case 'speak':
+      return hasQuotedMsg;
+    case 'img':
+      return args.length > 0;
+    case 'msg':
+      return args.length >= 2;
+    default:
+      return false;
   }
 }
 
@@ -65,7 +92,6 @@ export class MessageHandler {
       if (!message || !message.body) {
         return;
       }
-
       this.messageQueue.push(message);
     } catch (error) {
       logger.error({ err: error }, "Error handling message");
@@ -73,87 +99,100 @@ export class MessageHandler {
   }
 
   async processMessage(message) {
+    const chat = await message.getChat();
+    
     try {
-      // Forward to webhooks
-      //await forwardToWebhooks(message);
-
-      // Check if it's a command
       if (message.body.startsWith("!")) {
-        await this.handleCommand(message);
+        await this.handleCommand(message, chat);
         return;
       }
 
-      // Try to handle media links
+      // For non-command messages, only show typing if AI is enabled
+      if (await shouldUseAI()) {
+        await ChatState.setTyping(chat);
+      }
+      
       const mediaResult = await handleMediaExtraction(message);
       if (mediaResult.processed) {
+        await ChatState.clear(chat);
         return;
       }
 
-      // Generate voice for long messages
-      await generateVoiceIfNeeded(message.body, message);
-
-      // If no command or media and AI is enabled, process with AI
       if (await shouldUseAI()) {
-        await this.handleAIResponse(message);
+        await this.handleAIResponse(message, chat);
       }
+      
+      await ChatState.clear(chat);
     } catch (error) {
+      await ChatState.clear(chat);
       logger.error({ err: error }, "Error processing message");
       await message.reply("Sorry, there was an error processing your message.");
     }
   }
 
-  async handleCommand(message) {
+  async handleCommand(message, chat) {
     const [command, ...args] = message.body.slice(1).split(" ");
     const commandKey = command.toLowerCase();
 
-    const commandDoc = await Commands.findOne({
-      name: commandKey,
-    });
-
-    if (!commandDoc) {
-      await message.reply(
-        "Unknown command. Use !help to see available commands.",
-      );
-      return;
-    }
-
-    if (!commandDoc.enabled) {
-      await message.reply("This command is currently disabled.");
-      return;
-    }
-
-    const handler = commandHandlers[command];
-    if (!handler) {
-      logger.error({ command }, "Command handler not found");
-      await message.reply("This command is not implemented yet.");
-      return;
-    }
-
     try {
+      const commandDoc = await Commands.findOne({ name: commandKey });
+
+      if (!commandDoc || !commandDoc.enabled) {
+        await message.reply(
+          !commandDoc 
+            ? "Unknown command. Use !help to see available commands."
+            : "This command is currently disabled."
+        );
+        return;
+      }
+
+      // Only set chat state if command will provide a response
+      if (commandWillRespond(commandKey, args, message.hasQuotedMsg)) {
+        if (AUDIO_COMMANDS.has(commandKey)) {
+          await ChatState.setRecording(chat);
+        } else {
+          await ChatState.setTyping(chat);
+        }
+      }
+
+      const handler = commandHandlers[commandKey];
+      if (!handler) {
+        logger.error({ command }, "Command handler not found");
+        await message.reply("This command is not implemented yet.");
+        return;
+      }
+
       await handler(message, args);
       await Commands.updateOne(
-        { name: command },
+        { name: commandKey },
         {
           $inc: { usageCount: 1 },
           $set: { lastUsed: new Date() },
-        },
+        }
       );
+
     } catch (error) {
       logger.error({ err: error }, "Error executing command");
       await message.reply("Error executing command. Please try again later.");
+    } finally {
+      await ChatState.clear(chat);
     }
   }
 
-  async handleAIResponse(message) {
+  async handleAIResponse(message, chat) {
     try {
       const response = await generateAIResponse(message.body);
       await message.reply(response);
 
-      // Generate voice for long AI responses
-      await generateVoiceIfNeeded(response, message);
+      if (response.length >= MESSAGE_LENGTH_THRESHOLD) {
+        await ChatState.setRecording(chat);
+        await generateVoiceIfNeeded(response, message);
+      }
     } catch (error) {
       logger.error({ err: error }, "Error generating AI response");
       await message.reply("Sorry, I had trouble generating a response.");
+    } finally {
+      await ChatState.clear(chat);
     }
   }
 

@@ -150,7 +150,7 @@ async function sendMedia(url, message) {
 
     return true;
   } catch (error) {
-    logger.error({ err: error }, "Error in img command");
+    logger.error({ err: error }, "Error in extracting URL");
     return false;
   }
 }
@@ -164,7 +164,9 @@ export async function handleMediaExtraction(message) {
     const mediaType = getMediaType(url);
     if (!mediaType) return { processed: false };
 
-    logger.info(`Processing ${mediaType} URL:`, url);
+    logger.info(`Processing ${mediaType} URL`);
+    const chat = await message.getChat();
+    await chat.sendStateTyping();
     const success = await sendMedia(url, message);
 
     return {
@@ -173,7 +175,7 @@ export async function handleMediaExtraction(message) {
       url,
     };
   } catch (error) {
-    logger.error({ err: error }, "Error in msg command");
+    logger.error({ err: error }, "Error in handling media");
     return { processed: false, error };
   }
 }
