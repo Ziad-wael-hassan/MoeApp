@@ -155,7 +155,9 @@ export const commandHandlers = {
       const { base64, mimeType } = await textToSpeech(quotedMessage.body);
       const media = new MessageMedia(mimeType, base64);
 
-      await quotedMessage.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
+      await quotedMessage.reply(media, chat.id._serialized, {
+        sendAudioAsVoice: true,
+      });
     } catch (error) {
       logger.error({ err: error }, "Error in speak command:");
       await message.reply("Failed to convert text to speech.");

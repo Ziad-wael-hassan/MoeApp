@@ -97,32 +97,32 @@ class WhatsAppClient {
   }
 
   async initializeCommands() {
-  const defaultCommands = [
-    { name: 'help', enabled: true, adminOnly: false },
-    { name: 'toggleai', enabled: true, adminOnly: true },
-    { name: 'togglecmd', enabled: true, adminOnly: true },
-    { name: 'pfp', enabled: true, adminOnly: false },
-    { name: 'logs', enabled: true, adminOnly: true },
-    { name: 'speak', enabled: true, adminOnly: false },
-    { name: 'img', enabled: true, adminOnly: false },
-    { name: 'msg', enabled: true, adminOnly: true },
-  ];
+    const defaultCommands = [
+      { name: "help", enabled: true, adminOnly: false },
+      { name: "toggleai", enabled: true, adminOnly: true },
+      { name: "togglecmd", enabled: true, adminOnly: true },
+      { name: "pfp", enabled: true, adminOnly: false },
+      { name: "logs", enabled: true, adminOnly: true },
+      { name: "speak", enabled: true, adminOnly: false },
+      { name: "img", enabled: true, adminOnly: false },
+      { name: "msg", enabled: true, adminOnly: true },
+    ];
 
-  const insertPromises = defaultCommands.map(command =>
-    Commands.upsert(
-      { name: command.name },
-      {
-        $setOnInsert: {
-          ...command,
-          lastUsed: new Date(),
-          usageCount: 0,
+    const insertPromises = defaultCommands.map((command) =>
+      Commands.upsert(
+        { name: command.name },
+        {
+          $setOnInsert: {
+            ...command,
+            lastUsed: new Date(),
+            usageCount: 0,
+          },
         },
-      }
-    )
-  );
+      ),
+    );
 
-  await Promise.all(insertPromises);
-}
+    await Promise.all(insertPromises);
+  }
 
   async shutdown() {
     try {

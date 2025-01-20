@@ -13,7 +13,7 @@ const { MessageMedia } = WhatsAppWeb;
 const MESSAGE_LENGTH_THRESHOLD = 300;
 
 // Commands that use recording status instead of typing
-const AUDIO_COMMANDS = new Set(['speak']);
+const AUDIO_COMMANDS = new Set(["speak"]);
 
 // Helper for managing chat states
 const ChatState = {
@@ -24,7 +24,7 @@ const ChatState = {
       logger.error({ err: error }, "Failed to set typing state");
     }
   },
-  
+
   async setRecording(chat) {
     try {
       await chat.sendStateRecording();
@@ -32,22 +32,20 @@ const ChatState = {
       logger.error({ err: error }, "Failed to set recording state");
     }
   },
-  
+
   async clear(chat) {
     try {
       await chat.clearState();
     } catch (error) {
       logger.error({ err: error }, "Failed to clear chat state");
     }
-  }
+  },
 };
-
 
 async function shouldUseAI() {
   const setting = await Settings.findOne({ key: "ai_enabled" });
   return setting?.value ?? false;
 }
-
 
 async function generateVoiceIfNeeded(text, message) {
   if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
@@ -63,18 +61,18 @@ async function generateVoiceIfNeeded(text, message) {
 // Helper to determine if a command will provide a response
 function commandWillRespond(command, args, hasQuotedMsg) {
   switch (command) {
-    case 'help':
-    case 'toggleai':
-    case 'togglecmd':
-    case 'logs':
+    case "help":
+    case "toggleai":
+    case "togglecmd":
+    case "logs":
       return true;
-    case 'pfp':
+    case "pfp":
       return args.length > 0 || hasQuotedMsg;
-    case 'speak':
+    case "speak":
       return hasQuotedMsg;
-    case 'img':
+    case "img":
       return args.length > 0;
-    case 'msg':
+    case "msg":
       return args.length >= 2;
     default:
       return false;
@@ -100,7 +98,7 @@ export class MessageHandler {
 
   async processMessage(message) {
     const chat = await message.getChat();
-    
+
     try {
       if (message.body.startsWith("!")) {
         await this.handleCommand(message, chat);
@@ -111,7 +109,7 @@ export class MessageHandler {
       if (await shouldUseAI()) {
         await ChatState.setTyping(chat);
       }
-      
+
       const mediaResult = await handleMediaExtraction(message);
       if (mediaResult.processed) {
         await ChatState.clear(chat);
@@ -121,7 +119,7 @@ export class MessageHandler {
       if (await shouldUseAI()) {
         await this.handleAIResponse(message, chat);
       }
-      
+
       await ChatState.clear(chat);
     } catch (error) {
       await ChatState.clear(chat);
@@ -139,9 +137,9 @@ export class MessageHandler {
 
       if (!commandDoc || !commandDoc.enabled) {
         await message.reply(
-          !commandDoc 
+          !commandDoc
             ? "Unknown command. Use !help to see available commands."
-            : "This command is currently disabled."
+            : "This command is currently disabled.",
         );
         return;
       }
@@ -168,9 +166,8 @@ export class MessageHandler {
         {
           $inc: { usageCount: 1 },
           $set: { lastUsed: new Date() },
-        }
+        },
       );
-
     } catch (error) {
       logger.error({ err: error }, "Error executing command");
       await message.reply("Error executing command. Please try again later.");
