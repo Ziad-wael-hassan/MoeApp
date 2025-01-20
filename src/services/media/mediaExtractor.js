@@ -1,15 +1,22 @@
-import { logger } from '../../utils/logger.js';
-import WhatsAppWeb from 'whatsapp-web.js';
-import axios from 'axios';
-import { extractInstagramMedia, extractTikTokMedia, extractFacebookMedia } from './extractors.js';
+import { logger } from "../../utils/logger.js";
+import WhatsAppWeb from "whatsapp-web.js";
+import axios from "axios";
+import {
+  extractInstagramMedia,
+  extractTikTokMedia,
+  extractFacebookMedia,
+} from "./extractors.js";
 
 const { MessageMedia } = WhatsAppWeb;
 
 // Media patterns for different platforms
 const MEDIA_PATTERNS = {
-  INSTAGRAM: /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:[^\/\n]+\/)?(?:p|reel|tv)\/([^\/?#&\n]+)/i,
-  TIKTOK: /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/(?:@[\w.-]+\/video\/|\w+\/)?(\w+)/i,
-  FACEBOOK: /(?:https?:\/\/)?(?:www\.|web\.|m\.)?(?:facebook\.com|fb\.watch)\/(?:watch\/?\?v=|video\.php\?v=|video\.php\?id=|story\.php\?story_fbid=|reel\/|watch\/|[^\/]+\/videos\/(?:vb\.\d+\/)?)?(\d+)/i,
+  INSTAGRAM:
+    /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:[^\/\n]+\/)?(?:p|reel|tv)\/([^\/?#&\n]+)/i,
+  TIKTOK:
+    /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/(?:@[\w.-]+\/video\/|\w+\/)?(\w+)/i,
+  FACEBOOK:
+    /(?:https?:\/\/)?(?:www\.|web\.|m\.)?(?:facebook\.com|fb\.watch)\/(?:watch\/?\?v=|video\.php\?v=|video\.php\?id=|story\.php\?story_fbid=|reel\/|watch\/|[^\/]+\/videos\/(?:vb\.\d+\/)?)?(\d+)/i,
 };
 
 // Cache for recently processed URLs
@@ -24,11 +31,12 @@ const axiosInstance = axios.create({
   timeout: 30000,
   maxRedirects: 10,
   headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept': 'image/*, video/*',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Connection': 'keep-alive',
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    Accept: "image/*, video/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    Connection: "keep-alive",
   },
   validateStatus: (status) => status >= 200 && status < 300,
   maxContentLength: 50 * 1024 * 1024, // 50MB max
@@ -74,19 +82,20 @@ async function downloadMedia(url) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await axiosInstance.get(url, {
-        responseType: 'arraybuffer',
+        responseType: "arraybuffer",
       });
 
       const buffer = Buffer.from(response.data);
-      const base64 = buffer.toString('base64');
-      const mimeType = response.headers['content-type'] || 'application/octet-stream';
+      const base64 = buffer.toString("base64");
+      const mimeType =
+        response.headers["content-type"] || "application/octet-stream";
 
       return { base64, mimeType };
     } catch (error) {
       lastError = error;
       logger.error({ err: error }, "Error fetching image");
       if (attempt < MAX_RETRIES) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
     }
   }
@@ -98,7 +107,7 @@ async function extractMediaUrl(url, mediaType) {
   const extractors = {
     instagram: extractInstagramMedia,
     tiktok: extractTikTokMedia,
-    facebook: extractFacebookMedia
+    facebook: extractFacebookMedia,
   };
 
   const extractor = extractors[mediaType];
@@ -125,7 +134,7 @@ async function sendMedia(url, message) {
     // Get the media type and extract the actual media URL
     const mediaType = getMediaType(url);
     const mediaUrl = await extractMediaUrl(url, mediaType);
-    
+
     // Download the media
     const { base64, mimeType } = await downloadMedia(mediaUrl);
     const media = new MessageMedia(mimeType, base64);

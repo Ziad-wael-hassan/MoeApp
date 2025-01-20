@@ -1,6 +1,6 @@
-import axios from 'axios';
-import aesjs from 'aes-js';
-import { logger } from '../../utils/logger.js';
+import axios from "axios";
+import aesjs from "aes-js";
+import { logger } from "../../utils/logger.js";
 
 // Instagram video extraction
 function encryptData(data) {
@@ -35,7 +35,7 @@ export async function extractInstagramMedia(url) {
 
     return videoUrl;
   } catch (error) {
-    logger.error('Instagram extraction error:', error);
+    logger.error("Instagram extraction error:", error);
     throw error;
   }
 }
@@ -48,7 +48,8 @@ export async function extractTikTokMedia(url) {
     const response = await axios.get("https://www.tikwm.com/api/", {
       params: { url },
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         Accept: "application/json",
         "Accept-Encoding": "application/json",
       },
@@ -57,7 +58,9 @@ export async function extractTikTokMedia(url) {
     const { data } = response;
 
     if (!data || data.code !== 0) {
-      throw new Error(`Failed to fetch TikTok media details. API Response: ${JSON.stringify(data)}`);
+      throw new Error(
+        `Failed to fetch TikTok media details. API Response: ${JSON.stringify(data)}`,
+      );
     }
 
     if (!data.data) {
@@ -74,7 +77,7 @@ export async function extractTikTokMedia(url) {
 
     throw new Error("No media found in TikTok response");
   } catch (error) {
-    logger.error('TikTok extraction error:', error);
+    logger.error("TikTok extraction error:", error);
     throw error;
   }
 }
@@ -90,19 +93,25 @@ export async function extractFacebookMedia(url) {
           Accept: "*/*",
           "Content-Type": "application/json",
           Referer: "https://submagic-free-tools.fly.dev/facebook-downloader",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         },
         timeout: 30000,
         maxRedirects: 5,
-      }
+      },
     );
 
     if (!response.data) {
       throw new Error("Empty response received from server");
     }
 
-    if (!response.data.videoFormats || !Array.isArray(response.data.videoFormats)) {
-      throw new Error("Invalid response format: videoFormats not found or invalid");
+    if (
+      !response.data.videoFormats ||
+      !Array.isArray(response.data.videoFormats)
+    ) {
+      throw new Error(
+        "Invalid response format: videoFormats not found or invalid",
+      );
     }
 
     const videoFormats = response.data.videoFormats;
@@ -124,7 +133,7 @@ export async function extractFacebookMedia(url) {
 
     return videoUrl;
   } catch (error) {
-    logger.error('Facebook extraction error:', error);
+    logger.error("Facebook extraction error:", error);
     throw error;
   }
 }

@@ -14,7 +14,7 @@ const Commands = papr.model(
     adminOnly: types.boolean({ required: true }),
     lastUsed: types.date({ required: false }),
     usageCount: types.number({ required: true }),
-  })
+  }),
 );
 
 // Settings schema for bot configuration
@@ -24,7 +24,7 @@ const Settings = papr.model(
     key: types.string({ required: true }),
     value: types.any({ required: true }),
     updatedAt: types.date({ required: true }),
-  })
+  }),
 );
 
 // Media processing schema for tracking media downloads
@@ -36,7 +36,7 @@ const MediaProcessing = papr.model(
     processedAt: types.date({ required: true }),
     success: types.boolean({ required: true }),
     error: types.string({ required: false }),
-  })
+  }),
 );
 
 let client = null;

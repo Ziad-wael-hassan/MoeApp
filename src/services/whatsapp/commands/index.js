@@ -47,7 +47,7 @@ export const commandHandlers = {
             value: newValue,
             updatedAt: new Date(),
           },
-        }
+        },
       );
     } else {
       await Settings.insertOne({
@@ -58,7 +58,7 @@ export const commandHandlers = {
     }
 
     await message.reply(
-      `AI responses are now ${newValue ? "enabled" : "disabled"}`
+      `AI responses are now ${newValue ? "enabled" : "disabled"}`,
     );
   },
 
@@ -82,11 +82,11 @@ export const commandHandlers = {
 
     await Commands.updateOne(
       { name: cmdName },
-      { $set: { enabled: !command.enabled } }
+      { $set: { enabled: !command.enabled } },
     );
 
     await message.reply(
-      `Command !${cmdName} is now ${!command.enabled ? "enabled" : "disabled"}`
+      `Command !${cmdName} is now ${!command.enabled ? "enabled" : "disabled"}`,
     );
   },
 
@@ -148,14 +148,14 @@ export const commandHandlers = {
       await message.reply("Please quote a message to convert to speech.");
       return;
     }
+    const chat = await message.getChat();
 
     try {
       const quotedMessage = await message.getQuotedMessage();
-      const text = quotedMessage.body;
-      const { base64, mimeType } = await textToSpeech(text);
+      const { base64, mimeType } = await textToSpeech(quotedMessage.body);
       const media = new MessageMedia(mimeType, base64);
-      
-      await message.reply(media, { sendAudioAsVoice: true });
+
+      await quotedMessage.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
     } catch (error) {
       logger.error({ err: error }, "Error in speak command:");
       await message.reply("Failed to convert text to speech.");

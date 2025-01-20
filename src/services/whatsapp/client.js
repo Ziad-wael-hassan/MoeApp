@@ -48,11 +48,6 @@ class WhatsAppClient {
   }
 
   setupEventHandlers() {
-    this.client.on("qr", (qr) => {
-      logger.info("QR Code received");
-      // You could implement QR code display logic here
-    });
-
     this.client.on("authenticated", () => {
       logger.info("WhatsApp client authenticated");
       this.isAuthenticated = true;
@@ -88,7 +83,7 @@ class WhatsAppClient {
 
     this.reconnectAttempts++;
     logger.info(
-      `Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`
+      `Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`,
     );
 
     setTimeout(async () => {
@@ -102,32 +97,32 @@ class WhatsAppClient {
   }
 
   async initializeCommands() {
-    const defaultCommands = {
-      help: { enabled: true, adminOnly: false },
-      toggleai: { enabled: true, adminOnly: true },
-      togglecmd: { enabled: true, adminOnly: true },
-      pfp: { enabled: true, adminOnly: false },
-      logs: { enabled: true, adminOnly: true },
-      speak: { enabled: true, adminOnly: false },
-      img: { enabled: true, adminOnly: false },
-      msg: { enabled: true, adminOnly: true },
-    };
+  const defaultCommands = [
+    { name: 'help', enabled: true, adminOnly: false },
+    { name: 'toggleai', enabled: true, adminOnly: true },
+    { name: 'togglecmd', enabled: true, adminOnly: true },
+    { name: 'pfp', enabled: true, adminOnly: false },
+    { name: 'logs', enabled: true, adminOnly: true },
+    { name: 'speak', enabled: true, adminOnly: false },
+    { name: 'img', enabled: true, adminOnly: false },
+    { name: 'msg', enabled: true, adminOnly: true },
+  ];
 
-    for (const [name, details] of Object.entries(defaultCommands)) {
-      await Commands.upsert(
-        { name },
-        {
-          $setOnInsert: {
-            ...details,
-            lastUsed: new Date(),
-            usageCount: 0,
-          },
-        }
-      );
+  const insertPromises = defaultCommands.map(command =>
+    Commands.upsert(
+      { name: command.name },
+      {
+        $setOnInsert: {
+          ...command,
+          lastUsed: new Date(),
+          usageCount: 0,
+        },
+      }
+    )
+  );
 
-      logger.info(`Command ${name} initialized`);
-    }
-  }
+  await Promise.all(insertPromises);
+}
 
   async shutdown() {
     try {

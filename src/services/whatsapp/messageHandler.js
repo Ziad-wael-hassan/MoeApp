@@ -32,8 +32,8 @@ async function forwardToWebhooks(message) {
         })
         .catch((error) => {
           logger.error({ err: error }, `Webhook delivery failed for ${url}`);
-        })
-    )
+        }),
+    ),
   );
 }
 
@@ -67,7 +67,6 @@ export class MessageHandler {
       }
 
       this.messageQueue.push(message);
-      logger.debug("Message added to queue:", { body: message.body });
     } catch (error) {
       logger.error({ err: error }, "Error handling message");
     }
@@ -112,7 +111,9 @@ export class MessageHandler {
     });
 
     if (!commandDoc) {
-      await message.reply("Unknown command. Use !help to see available commands.");
+      await message.reply(
+        "Unknown command. Use !help to see available commands.",
+      );
       return;
     }
 
@@ -135,7 +136,7 @@ export class MessageHandler {
         {
           $inc: { usageCount: 1 },
           $set: { lastUsed: new Date() },
-        }
+        },
       );
     } catch (error) {
       logger.error({ err: error }, "Error executing command");
@@ -147,7 +148,7 @@ export class MessageHandler {
     try {
       const response = await generateAIResponse(message.body);
       await message.reply(response);
-      
+
       // Generate voice for long AI responses
       await generateVoiceIfNeeded(response, message);
     } catch (error) {
