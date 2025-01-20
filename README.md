@@ -1,8 +1,8 @@
 ---
-title: MoeAppQr
-emoji: 🐨
-colorFrom: red
-colorTo: yellow
+title: MoeApp
+emoji: 🏢
+colorFrom: indigo
+colorTo: pink
 sdk: docker
 pinned: false
 ---
