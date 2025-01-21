@@ -19,6 +19,10 @@ RUN apt-get update \
 # Set up working directory
 WORKDIR /app
 
+
+# Test DNS resolution and clean up
+RUN apt-get update && apt-get install -y dnsutils && nslookup web.whatsapp.com && apt-get remove --purge -y dnsutils && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
 # Copy package files
 COPY package.json ./
 
