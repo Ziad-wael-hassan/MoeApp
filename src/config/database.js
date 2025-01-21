@@ -14,6 +14,9 @@ const Commands = papr.model(
     adminOnly: types.boolean({ required: true }),
     lastUsed: types.date({ required: false }),
     usageCount: types.number({ required: true }),
+    description: types.string({ required: true }),
+    category: types.string({ required: true }),
+    usage: types.string({ required: true }),
   }),
 );
 

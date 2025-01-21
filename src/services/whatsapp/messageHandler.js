@@ -7,6 +7,8 @@ import { textToSpeech } from "../audio/tts.js";
 import WhatsAppWeb from "whatsapp-web.js";
 import axios from "axios";
 import { env } from "../../config/env.js";
+import { whatsappClient } from "./client.js";
+import removeMarkdown from "remove-markdown";
 
 const { MessageMedia } = WhatsAppWeb;
 
@@ -48,16 +50,73 @@ async function shouldUseAI() {
 }
 
 async function generateVoiceIfNeeded(text, message) {
-  if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
+  try {
+    const contact = await message.getContact();
+    const isMetaAI = contact.name === "Meta AI" || contact.pushname === "Meta AI";
+
+    if (!isMetaAI) {
+      return;
+    }
+
     try {
+      const client = whatsappClient.getClient();
+      const reloadedMessage = await waitForCompleteMessage(
+        client,
+        message.id._serialized
+      );
+      text = reloadedMessage.body;
+    } catch (error) {
+      logger.error({ err: error }, "Error waiting for complete message");
+      return;
+    }
+
+    if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
+      const chat = await message.getChat();
+      await chat.sendStateRecording();
       const { base64, mimeType } = await textToSpeech(text);
       const media = new MessageMedia(mimeType, base64);
-      await message.reply(media, { sendAudioAsVoice: true });
-    } catch (error) {
-      logger.error({ err: error }, "Error generating voice for message");
+      await message.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
     }
+  } catch (error) {
+    logger.error({ err: error }, "Error generating voice for message");
   }
 }
+
+// Helper function to wait for complete message
+async function waitForCompleteMessage(client, messageId, maxAttempts = 10) {
+  let previousMessage = "";
+  let sameContentCount = 0;
+  let attempt = 0;
+
+  while (attempt < maxAttempts) {
+    // Get the current state of the message
+    const currentMessage = await client.getMessageById(messageId);
+    const currentContent = currentMessage.body;
+
+    // If the content hasn't changed from the previous check
+    if (currentContent === previousMessage) {
+      sameContentCount++;
+      // If content remained the same for 2 consecutive checks, assume it's complete
+      if (sameContentCount >= 2) {
+        return currentMessage;
+      }
+    } else {
+      // Reset the counter if content changed
+      sameContentCount = 0;
+    }
+
+    previousMessage = currentContent;
+    attempt++;
+
+    // Wait for a shorter interval between checks
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const finalMessage = await client.getMessageById(messageId);
+  const cleanedMessage = removeMarkdown(finalMessage);
+
+  return cleanedMessage;
+}
+
 // Helper to determine if a command will provide a response
 function commandWillRespond(command, args, hasQuotedMsg) {
   switch (command) {
@@ -115,6 +174,8 @@ export class MessageHandler {
         await ChatState.clear(chat);
         return;
       }
+
+      await generateVoiceIfNeeded(message.body, message);
 
       if (await shouldUseAI()) {
         await this.handleAIResponse(message, chat);
@@ -179,12 +240,8 @@ export class MessageHandler {
   async handleAIResponse(message, chat) {
     try {
       const response = await generateAIResponse(message.body);
-      await message.reply(response);
 
-      if (response.length >= MESSAGE_LENGTH_THRESHOLD) {
-        await ChatState.setRecording(chat);
-        await generateVoiceIfNeeded(response, message);
-      }
+      await message.reply(response);
     } catch (error) {
       logger.error({ err: error }, "Error generating AI response");
       await message.reply("Sorry, I had trouble generating a response.");
@@ -202,7 +259,6 @@ export class MessageHandler {
 
   start() {
     setInterval(() => this.processQueue(), this.processingInterval);
-    logger.info("Message handler started");
   }
 }
 

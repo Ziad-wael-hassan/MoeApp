@@ -1,6 +1,8 @@
+// mediaExtractor.js
 import { logger } from "../../utils/logger.js";
 import WhatsAppWeb from "whatsapp-web.js";
 import axios from "axios";
+import { MEDIA_PATTERNS } from "./mediaPatterns.js";
 import {
   extractInstagramMedia,
   extractTikTokMedia,
@@ -9,21 +11,10 @@ import {
 
 const { MessageMedia } = WhatsAppWeb;
 
-// Media patterns for different platforms
-const MEDIA_PATTERNS = {
-  INSTAGRAM:
-    /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:[^\/\n]+\/)?(?:p|reel|tv)\/([^\/?#&\n]+)/i,
-  TIKTOK:
-    /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/(?:@[\w.-]+\/video\/|\w+\/)?(\w+)/i,
-  FACEBOOK:
-    /(?:https?:\/\/)?(?:www\.|web\.|m\.)?(?:facebook\.com|fb\.watch)\/(?:watch\/?\?v=|video\.php\?v=|video\.php\?id=|story\.php\?story_fbid=|reel\/|watch\/|[^\/]+\/videos\/(?:vb\.\d+\/)?)?(\d+)/i,
-};
-
 // Cache for recently processed URLs
 const mediaCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_SIZE = 100;
-const MAX_RETRIES = 3;
 const PROCESSING_TIMEOUT = 60000; // 60 seconds
 
 // Configure axios instance
@@ -31,8 +22,7 @@ const axiosInstance = axios.create({
   timeout: 30000,
   maxRedirects: 10,
   headers: {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     Accept: "image/*, video/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
@@ -45,15 +35,19 @@ const axiosInstance = axios.create({
 
 // Extract URLs from message
 function extractUrl(messageBody) {
+  if (!messageBody) return null;
+
   for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
     const match = messageBody.match(pattern);
-    if (match) return match[0];
+    if (match && match[0]) return match[0];
   }
   return null;
 }
 
 // Determine media type from URL
 function getMediaType(url) {
+  if (!url) return null;
+
   for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
     if (pattern.test(url)) return platform.toLowerCase();
   }
@@ -67,7 +61,6 @@ function manageCache() {
     mediaCache.delete(oldestKey);
   }
 
-  // Clear expired entries
   const now = Date.now();
   for (const [key, { timestamp }] of mediaCache.entries()) {
     if (now - timestamp > CACHE_TTL) {
@@ -76,34 +69,28 @@ function manageCache() {
   }
 }
 
-// Download media with retries
+// Download media
 async function downloadMedia(url) {
-  let lastError;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const response = await axiosInstance.get(url, {
-        responseType: "arraybuffer",
-      });
+  if (!url) throw new Error('Invalid media URL');
 
-      const buffer = Buffer.from(response.data);
-      const base64 = buffer.toString("base64");
-      const mimeType =
-        response.headers["content-type"] || "application/octet-stream";
+  const response = await axiosInstance.get(url, {
+    responseType: "arraybuffer",
+    timeout: PROCESSING_TIMEOUT,
+  });
 
-      return { base64, mimeType };
-    } catch (error) {
-      lastError = error;
-      logger.error({ err: error }, "Error fetching image");
-      if (attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-      }
-    }
-  }
-  throw lastError;
+  const buffer = Buffer.from(response.data);
+  const base64 = buffer.toString("base64");
+  const mimeType = response.headers["content-type"] || "application/octet-stream";
+
+  return { base64, mimeType };
 }
 
 // Extract media URL based on platform
 async function extractMediaUrl(url, mediaType) {
+  if (!url || !mediaType) {
+    throw new Error('Invalid URL or media type');
+  }
+
   const extractors = {
     instagram: extractInstagramMedia,
     tiktok: extractTikTokMedia,
@@ -115,11 +102,23 @@ async function extractMediaUrl(url, mediaType) {
     throw new Error(`No extractor available for media type: ${mediaType}`);
   }
 
-  return await extractor(url);
+  try {
+    const extractPromise = extractor(url);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Media extraction timed out')), PROCESSING_TIMEOUT)
+    );
+
+    return await Promise.race([extractPromise, timeoutPromise]);
+  } catch (error) {
+    logger.error('Media extraction failed');
+    throw error;
+  }
 }
 
 // Send media to chat
 async function sendMedia(url, message) {
+  if (!url || !message) return false;
+
   try {
     // Check cache first
     if (mediaCache.has(url)) {
@@ -131,17 +130,17 @@ async function sendMedia(url, message) {
       mediaCache.delete(url);
     }
 
-    // Get the media type and extract the actual media URL
     const mediaType = getMediaType(url);
+    if (!mediaType) return false;
+
+    logger.info(`Processing ${mediaType} URL`);
     const mediaUrl = await extractMediaUrl(url, mediaType);
 
-    // Download the media
     const { base64, mimeType } = await downloadMedia(mediaUrl);
     const media = new MessageMedia(mimeType, base64);
 
     await message.reply(media);
 
-    // Cache the result
     mediaCache.set(url, {
       media,
       timestamp: Date.now(),
@@ -150,13 +149,15 @@ async function sendMedia(url, message) {
 
     return true;
   } catch (error) {
-    logger.error({ err: error }, "Error in extracting URL");
+    logger.error('Error in extracting URL');
     return false;
   }
 }
 
 // Main handler for media extraction
 export async function handleMediaExtraction(message) {
+  if (!message?.body) return { processed: false };
+
   try {
     const url = extractUrl(message.body);
     if (!url) return { processed: false };
@@ -164,9 +165,9 @@ export async function handleMediaExtraction(message) {
     const mediaType = getMediaType(url);
     if (!mediaType) return { processed: false };
 
-    logger.info(`Processing ${mediaType} URL`);
     const chat = await message.getChat();
     await chat.sendStateTyping();
+    
     const success = await sendMedia(url, message);
 
     return {
@@ -175,7 +176,7 @@ export async function handleMediaExtraction(message) {
       url,
     };
   } catch (error) {
-    logger.error({ err: error }, "Error in handling media");
-    return { processed: false, error };
+    logger.error('Error in handling media');
+    return { processed: false, error: error.message };
   }
 }

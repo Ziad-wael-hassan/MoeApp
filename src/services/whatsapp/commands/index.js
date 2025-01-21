@@ -34,24 +34,19 @@ export const commandHandlers = {
     let response = `📱 *MoeApp Commands*\n\n`;
 
     for (const [category, cmds] of Object.entries(categorizedCommands)) {
-      response += `*${category.toUpperCase()}*\n`;
+      response += `🔹 *${category.toUpperCase()}*\n`;
+      response += `━━━━━━━━━━━━━━━━━━\n`;
       for (const cmd of cmds) {
-        response += `\n▫️ *!${cmd.name}*\n`;
-        response += `┌ *Description:* ${cmd.description}\n`;
-        response += `├ *Usage:* ${cmd.usage}\n`;
-        if (cmd.aliases?.length > 0) {
-          response += `└ *Aliases:* ${cmd.aliases.join(", ")}\n`;
-        }
-        response += "\n";
+        response += `\n✨ *Command:* \`!${cmd.name}\`\n`;
+        response += `📄 *Description:* ${cmd.description}\n`;
+        response += `⚙️ *Usage:* \`${cmd.usage}\`\n`;
+        response += `━━━━━━━━━━━━━━━━━━\n`;
       }
-      response += "\n";
+      response += `\n`;
     }
-
-    response += `\n_Send !help <command> for detailed information about a specific command._`;
 
     await message.reply(response);
   },
-
   async toggleai(message) {
     if (!(await isAdmin(message))) {
       await message.reply("This command is for admins only.");

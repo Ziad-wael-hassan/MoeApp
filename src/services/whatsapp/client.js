@@ -48,6 +48,13 @@ class WhatsAppClient {
     }
   }
 
+  getClient() {
+    if (!this.client) {
+      throw new Error("WhatsApp client is not initialized yet.");
+    }
+    return this.client;
+  }
+
   setupEventHandlers() {
     this.client.on("authenticated", () => {
       logger.info("WhatsApp client authenticated");
@@ -179,8 +186,14 @@ class WhatsAppClient {
       Commands.upsert(
         { name: command.name },
         {
+          $set: {
+            description: command.description,
+            category: command.category,
+            usage: command.usage,
+            enabled: command.enabled,
+            adminOnly: command.adminOnly,
+          },
           $setOnInsert: {
-            ...command,
             lastUsed: new Date(),
             usageCount: 0,
           },
