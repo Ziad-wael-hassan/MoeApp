@@ -32,6 +32,7 @@ class WhatsAppClient {
             "--disable-dev-shm-usage",
             "--disable-accelerated-2d-canvas",
             "--disable-gpu",
+            '--host-resolver-rules="MAP * 8.8.8.8, EXCLUDE localhost"',
           ],
         },
       });
