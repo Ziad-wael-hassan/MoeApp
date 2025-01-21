@@ -16,12 +16,13 @@ RUN apt-get update \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
+
+# Set Google's DNS servers
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+
 # Set up working directory
 WORKDIR /app
-
-
-# Test DNS resolution and clean up
-RUN apt-get update && apt-get install -y dnsutils && nslookup web.whatsapp.com 8.8.8.8
 
 # Copy package files
 COPY package.json ./
