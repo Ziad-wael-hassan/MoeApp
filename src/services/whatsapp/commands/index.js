@@ -20,14 +20,36 @@ export const commandHandlers = {
     const commands = await Commands.find({ enabled: true });
     const isUserAdmin = await isAdmin(message);
 
-    let commandsList = "";
-    for (const cmd of commands) {
+    // Group commands by category
+    const categorizedCommands = commands.reduce((acc, cmd) => {
       if (!cmd.adminOnly || isUserAdmin) {
-        commandsList += `*!${cmd.name}*: ${cmd.description}\n`;
+        if (!acc[cmd.category]) {
+          acc[cmd.category] = [];
+        }
+        acc[cmd.category].push(cmd);
       }
+      return acc;
+    }, {});
+
+    let response = `📱 *MoeApp Commands*\n\n`;
+
+    for (const [category, cmds] of Object.entries(categorizedCommands)) {
+      response += `*${category.toUpperCase()}*\n`;
+      for (const cmd of cmds) {
+        response += `\n▫️ *!${cmd.name}*\n`;
+        response += `┌ *Description:* ${cmd.description}\n`;
+        response += `├ *Usage:* ${cmd.usage}\n`;
+        if (cmd.aliases?.length > 0) {
+          response += `└ *Aliases:* ${cmd.aliases.join(", ")}\n`;
+        }
+        response += "\n";
+      }
+      response += "\n";
     }
 
-    await message.reply(`Available commands:\n\n${commandsList}`);
+    response += `\n_Send !help <command> for detailed information about a specific command._`;
+
+    await message.reply(response);
   },
 
   async toggleai(message) {

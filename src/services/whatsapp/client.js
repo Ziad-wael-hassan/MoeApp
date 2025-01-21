@@ -99,14 +99,80 @@ class WhatsAppClient {
 
   async initializeCommands() {
     const defaultCommands = [
-      { name: "help", enabled: true, adminOnly: false },
-      { name: "toggleai", enabled: true, adminOnly: true },
-      { name: "togglecmd", enabled: true, adminOnly: true },
-      { name: "pfp", enabled: true, adminOnly: false },
-      { name: "logs", enabled: true, adminOnly: true },
-      { name: "speak", enabled: true, adminOnly: false },
-      { name: "img", enabled: true, adminOnly: false },
-      { name: "msg", enabled: true, adminOnly: true },
+      {
+        name: "help",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "general",
+        description:
+          "Displays a list of all available commands and their usage",
+        usage: "!help [command]",
+      },
+      {
+        name: "toggleai",
+        enabled: true,
+        adminOnly: true,
+        usageCount: 0,
+        category: "admin",
+        description: "Toggles the AI response functionality on or off",
+        usage: "!toggleai",
+      },
+      {
+        name: "togglecmd",
+        enabled: true,
+        adminOnly: true,
+        usageCount: 0,
+        category: "admin",
+        description: "Enables or disables a specified command",
+        usage: "!togglecmd <command_name>",
+      },
+      {
+        name: "pfp",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "utility",
+        description:
+          "Retrieves the profile picture of a mentioned user or number",
+        usage: "!pfp <@mention or number>",
+      },
+      {
+        name: "logs",
+        enabled: true,
+        adminOnly: true,
+        usageCount: 0,
+        category: "admin",
+        description: "Displays bot statistics and command usage information",
+        usage: "!logs",
+      },
+      {
+        name: "speak",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "media",
+        description: "Converts a quoted text message into voice audio",
+        usage: "!speak (quote a message)",
+      },
+      {
+        name: "img",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "media",
+        description: "Searches and sends an image based on the given query",
+        usage: "!img <search query>",
+      },
+      {
+        name: "msg",
+        enabled: true,
+        adminOnly: true,
+        usageCount: 0,
+        category: "admin",
+        description: "Sends a message to a specified user through the bot",
+        usage: "!msg <@mention or number> <message>",
+      },
     ];
 
     const insertPromises = defaultCommands.map((command) =>
