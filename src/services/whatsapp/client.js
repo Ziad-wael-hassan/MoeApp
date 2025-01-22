@@ -4,7 +4,6 @@ import { logger } from "../../utils/logger.js";
 import { Commands } from "../../config/database.js";
 import { env } from "../../config/env.js";
 import { messageHandler } from "./messageHandler.js";
-
 const { Client, LocalAuth } = WhatsAppWeb;
 
 class WhatsAppClient {
@@ -32,7 +31,7 @@ class WhatsAppClient {
             "--disable-dev-shm-usage",
             "--disable-accelerated-2d-canvas",
             "--disable-gpu",
-            '--host-resolver-rules="MAP * 8.8.8.8, EXCLUDE localhost"',
+            "--proxy-server=http://127.0.0.1:8002",
           ],
         },
       });

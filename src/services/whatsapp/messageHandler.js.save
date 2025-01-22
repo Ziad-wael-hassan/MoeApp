@@ -1,0 +1,609 @@
+import { Commands, Settings } from "../../config/database.js";
+import { logger } from "../../utils/logger.js";
+import { commandHandlers } from "./commands/index.js";
+import { handleMediaExtraction } from "../media/mediaExtractor.js";
+import { generateAIResponse } from "../ai/aiService.js";
+import { textToSpeech } from "../audio/tts.js";
+import WhatsAppWeb from "whatsapp-web.js";
+import axios from "axios";
+import { env } from "../../config/env.js";
+import { whatsappClient } from "./client.js";
+import removeMarkdown from "remove-markdown";
+
+const { MessageMedia } = WhatsAppWeb;
+
+const MESSAGE_LENGTH_THRESHOLD = 300;
+
+// Commands that use recording status instead of typing
+const AUDIO_COMMANDS = new Set(["speak"]);
+
+// Helper for managing chat states
+const ChatState = {
+  async setTyping(chat) {
+    try {
+      await chat.sendStateTyping();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to set typing state");
+    }
+  },
+
+  async setRecording(chat) {
+    try {
+      await chat.sendStateRecording();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to set recording state");
+    }
+  },
+
+  async clear(chat) {
+    try {
+      await chat.clearState();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to clear chat state");
+    }
+  },
+};
+
+async function shouldUseAI() {
+  const setting = await Settings.findOne({ key: "ai_enabled" });
+  return setting?.value ?? false;
+}
+
+async function generateVoiceIfNeeded(text, message) {
+  try {
+    const contact = await message.getContact();
+    const isMetaAI =
+      contact.name === "Meta AI" || contact.pushname === "Meta AI";
+
+    if (!isMetaAI) {
+      return;
+    }
+
+    try {
+      const client = whatsappClient.getClient();
+      const reloadedMessage = await waitForCompleteMessage(
+        client,
+        message.id._serialized,
+      );
+      text = reloadedMessage.body;
+    } catch (error) {
+      logger.error({ err: error }, "Error waiting for complete message");
+      return;
+    }
+
+    if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
+      const chat = await message.getChat();
+      await chat.sendStateRecording();
+      const { base64, mimeType } = await textToSpeech(text);
+      const media = new MessageMedia(mimeType, base64);
+      await message.reply(media, chat.id._serialized, {
+        sendAudioAsVoice: true,
+      });
+    }
+  } catch (error) {
+    logger.error({ err: error }, "Error generating voice for message");
+  }
+}
+
+// Helper function to wait for complete message
+async function waitForCompleteMessage(client, messageId, maxAttempts = 10) {
+  let previousMessage = "";
+  let sameContentCount = 0;
+  let attempt = 0;
+
+  while (attempt < maxAttempts) {
+    // Get the current state of the message
+    const currentMessage = await client.getMessageById(messageId);
+    const currentContent = currentMessage.body;
+
+    // If the content hasn't changed from the previous check
+    if (currentContent === previousMessage) {
+      sameContentCount++;
+      // If content remained the same for 2 consecutive checks, assume it's complete
+      if (sameContentCount >= 2) {
+        return currentMessage;
+      }
+    } else {
+      // Reset the counter if content changed
+      sameContentCount = 0;
+    }
+
+    previousMessage = currentContent;
+    attempt++;
+
+    // Wait for a shorter interval between checks
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const finalMessage = await client.getMessageById(messageId);
+  const cleanedMessage = removeMarkdown(finalMessage);
+
+  return cleanedMessage;
+}
+
+// Helper to determine if a command will provide a response
+function commandWillRespond(command, args, hasQuotedMsg) {
+  switch (command) {
+    case "help":
+    case "toggleai":
+    case "togglecmd":
+    case "logs":
+      return true;
+    case "pfp":
+      return args.length > 0 || hasQuotedMsg;
+    case "speak":
+      return hasQuotedMsg;
+    case "img":
+      return args.length > 0;
+    case "msg":
+      return args.length >= 2;
+    default:
+      return false;
+  }
+}
+
+export class MessageHandler {
+  constructor(processingInterval = 1000) {
+    this.messageQueue = [];
+    this.usersToRespondTo = new Set();
+    this.client = null;
+    this.processingInterval = processingInterval;
+  }
+
+
+  setClient(client) {
+    this.client = client;
+  }
+
+  async handleMessage(message) {
+    try {
+      if (!message || !message.body) {
+        return;
+      }
+      this.messageQueue.push(message);
+    } catch (error) {
+      logger.error({ err: error }, "Error handling message");
+    }
+  }
+
+  // messageHandler.js
+import { Commands, Settings } from "../../config/database.js";
+import { logger } from "../../utils/logger.js";
+import { commandHandlers } from "./commands/index.js";
+import { handleMediaExtraction } from "../media/mediaExtractor.js";
+import { generateAIResponse } from "../ai/aiService.js";
+import { textToSpeech } from "../audio/tts.js";
+import WhatsAppWeb from "whatsapp-web.js";
+import axios from "axios";
+import { env } from "../../config/env.js";
+import { whatsappClient } from "./client.js";
+import removeMarkdown from "remove-markdown";
+
+const { MessageMedia } = WhatsAppWeb;
+
+const MESSAGE_LENGTH_THRESHOLD = 300;
+
+// Commands that use recording status instead of typing
+const AUDIO_COMMANDS = new Set(["speak"]);
+
+// Helper for managing chat states
+const ChatState = {
+  async setTyping(chat) {
+    try {
+      await chat.sendStateTyping();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to set typing state");
+    }
+  },
+
+  async setRecording(chat) {
+    try {
+      await chat.sendStateRecording();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to set recording state");
+    }
+  },
+
+  async clear(chat) {
+    try {
+      await chat.clearState();
+    } catch (error) {
+      logger.error({ err: error }, "Failed to clear chat state");
+    }
+  },
+};
+
+async function shouldUseAI() {
+  const setting = await Settings.findOne({ key: "ai_enabled" });
+  return setting?.value ?? false;
+}
+
+async function generateVoiceIfNeeded(text, message) {
+  try {
+    const contact = await message.getContact();
+    const isMetaAI =
+      contact.name === "Meta AI" || contact.pushname === "Meta AI";
+
+    if (!isMetaAI) {
+      return;
+    }
+
+    try {
+      const client = whatsappClient.getClient();
+      const reloadedMessage = await waitForCompleteMessage(
+        client,
+        message.id._serialized,
+      );
+      text = reloadedMessage.body;
+    } catch (error) {
+      logger.error({ err: error }, "Error waiting for complete message");
+      return;
+    }
+
+    if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
+      const chat = await message.getChat();
+      await chat.sendStateRecording();
+      const { base64, mimeType } = await textToSpeech(text);
+      const media = new MessageMedia(mimeType, base64);
+      await message.reply(media, chat.id._serialized, {
+        sendAudioAsVoice: true,
+      });
+    }
+  } catch (error) {
+    logger.error({ err: error }, "Error generating voice for message");
+  }
+}
+
+// Helper function to wait for complete message
+async function waitForCompleteMessage(client, messageId, maxAttempts = 10) {
+  let previousMessage = "";
+  let sameContentCount = 0;
+  let attempt = 0;
+
+  while (attempt < maxAttempts) {
+    // Get the current state of the message
+    const currentMessage = await client.getMessageById(messageId);
+    const currentContent = currentMessage.body;
+
+    // If the content hasn't changed from the previous check
+    if (currentContent === previousMessage) {
+      sameContentCount++;
+      // If content remained the same for 2 consecutive checks, assume it's complete
+      if (sameContentCount >= 2) {
+        return currentMessage;
+      }
+    } else {
+      // Reset the counter if content changed
+      sameContentCount = 0;
+    }
+
+    previousMessage = currentContent;
+    attempt++;
+
+    // Wait for a shorter interval between checks
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const finalMessage = await client.getMessageById(messageId);
+  const cleanedMessage = removeMarkdown(finalMessage);
+
+  return cleanedMessage;
+}
+
+// Helper to determine if a command will provide a response
+function commandWillRespond(command, args, hasQuotedMsg) {
+  switch (command) {
+    case "help":
+    case "toggleai":
+    case "togglecmd":
+    case "logs":
+      return true;
+    case "pfp":
+      return args.length > 0 || hasQuotedMsg;
+    case "speak":
+      return hasQuotedMsg;
+    case "img":
+      return args.length > 0;
+    case "msg":
+      return args.length >= 2;
+    default:
+      return false;
+  }
+}
+
+export class MessageHandler {
+  constructor(processingInterval = 1000) {
+    this.messageQueue = [];
+    this.usersToRespondTo = new Set();
+    this.client = null;
+    this.processingInterval = processingInterval;
+  }
+
+  setClient(client) {
+    this.client = client;
+  }
+
+  async handleMessage(message) {
+    try {
+      if (!message || !message.body) {
+        return;
+      }
+      this.messageQueue.push(message);
+    } catch (error) {
+      logger.error({ err: error }, "Error handling message");
+    }
+  }
+
+  async processMessage(message) {
+    const chat = await message.getChat();
+    const logContext = `[Chat: ${chat.id.split("@")[0]} | Author: ${message.author.split("@")[0]}]`;
+
+    try {
+      console.log(
+        `${logContext} Processing message: ${message.body.substring(0, 50)}...`,
+      );
+
+      // Handle commands
+      if (message.body.startsWith("!")) {
+        console.log(`${logContext} Processing command`);
+        await this.handleCommand(message, chat);
+        return;
+      }
+
+      // Process media
+      try {
+        const mediaResult = await handleMediaExtraction(message);
+        if (mediaResult.processed) {
+          console.log(`${logContext} Media processed successfully`);
+          await ChatState.clear(chat);
+          return;
+        }
+      } catch (mediaError) {
+        console.error(`${logContext} Error processing media:`, mediaError);
+      }
+
+      // Check for bot mentions
+      const wasMentioned = this.checkBotMention(message.body);
+      if (chat.isGroup && wasMentioned) {
+        console.log(
+          `${logContext} Bot was mentioned - adding user to response list`,
+        );
+        this.usersToRespondTo.add(message.author);
+        await message.reply(
+          "I'll start responding to your messages now! Use '!stop' to make me stop.",
+        );
+        return;
+      }
+
+      // Handle quoted messages
+      if (message.hasQuotedMsg) {
+        const quotedMessage = await message.getQuotedMessage();
+        if (quotedMessage.author !== this.client.info.wid._serialized) {
+          console.log(`${logContext} Skipping - reply to another user`);
+          return;
+        }
+      }
+
+      // Generate voice if needed
+      try {
+        await generateVoiceIfNeeded(message.body, message);
+      } catch (voiceError) {
+        console.error(`${logContext} Error generating voice:`, voiceError);
+      }
+
+      // Process AI response
+      const shouldRespond = await this.shouldRespond(message);
+      if (shouldRespond) {
+        console.log(`${logContext} Processing AI response`);
+        await ChatState.setTyping(chat);
+
+        try {
+          const aiResponse = await this.handleAIResponse(message, chat);
+
+          if (aiResponse.terminate) {
+            console.log(`${logContext} Terminating conversation with user`);
+            this.usersToRespondTo.delete(message.author);
+            await message.reply(
+              "I'll stop responding to you now. Mention me again if you need anything!",
+            );
+          }
+        } catch (aiError) {
+          console.error(`${logContext} Error generating AI response:`, aiError);
+          throw aiError;
+        }
+      }
+
+      await ChatState.clear(chat);
+    } catch (error) {
+      console.error(`${logContext} Fatal error processing message:`, error);
+      await ChatState.clear(chat);
+      await message.reply(
+        "I encountered an error processing your message. Please try again later.",
+      );
+    }
+  }
+
+  checkBotMention(messageText) {
+    const normalizedMessage = messageText.toLowerCase();
+    const botId = this.client.info.wid._serialized;
+    const mentions = ["ai", botId, "@mōe🫐", "moe"];
+
+    return mentions.some((mention) =>
+      normalizedMessage.includes(mention.toLowerCase()),
+    );
+  }
+
+  async handleCommand(message, chat) {
+    const [command, ...args] = message.body.slice(1).split(" ");
+    const commandKey = command.toLowerCase();
+
+    try {
+      const commandDoc = await Commands.findOne({ name: commandKey });
+
+      if (!commandDoc || !commandDoc.enabled) {
+        await message.reply(
+          !commandDoc
+            ? "Unknown command. Use !help to see available commands."
+            : "This command is currently disabled.",
+        );
+        return;
+      }
+
+      // Only set chat state if command will provide a response
+      if (commandWillRespond(commandKey, args, message.hasQuotedMsg)) {
+        if (AUDIO_COMMANDS.has(commandKey)) {
+          await ChatState.setRecording(chat);
+        } else {
+          await ChatState.setTyping(chat);
+        }
+      }
+
+      const handler = commandHandlers[commandKey];
+      if (!handler) {
+        logger.error({ command }, "Command handler not found");
+        await message.reply("This command is not implemented yet.");
+        return;
+      }
+
+      await handler(message, args);
+      await Commands.updateOne(
+        { name: commandKey },
+        {
+          $inc: { usageCount: 1 },
+          $set: { lastUsed: new Date() },
+        },
+      );
+    } catch (error) {
+      logger.error({ err: error }, "Error executing command");
+      await message.reply("Error executing command. Please try again later.");
+    } finally {
+      await ChatState.clear(chat);
+    }
+  }
+
+  async handleAIResponse(message, chat) {
+    try {
+      const { response, command, terminate } = await generateAIResponse(
+        message.body,
+      );
+
+      await message.reply(response);
+
+      if (command) {
+        await handleCommand(command, chat);
+      }
+
+      // Optionally log or handle the `terminate` flag
+      if (terminate) {
+        logger.info(
+          `Conversation with chat ${chat.id} is marked as terminated.`,
+        );
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Error generating AI response");
+      await message.reply("Sorry, I had trouble generating a response.");
+    } finally {
+      await ChatState.clear(chat);
+    }
+  }
+
+  async processQueue() {
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      await this.processMessage(message);
+    }
+  }
+
+  start() {
+    setInterval(() => this.processQueue(), this.processingInterval);
+  }
+}
+
+export const messageHandler = new MessageHandler();
+
+
+  async handleCommand(message, chat) {
+    const [command, ...args] = message.body.slice(1).split(" ");
+    const commandKey = command.toLowerCase();
+
+    try {
+      const commandDoc = await Commands.findOne({ name: commandKey });
+
+      if (!commandDoc || !commandDoc.enabled) {
+        await message.reply(
+          !commandDoc
+            ? "Unknown command. Use !help to see available commands."
+            : "This command is currently disabled.",
+        );
+        return;
+      }
+
+      // Only set chat state if command will provide a response
+      if (commandWillRespond(commandKey, args, message.hasQuotedMsg)) {
+        if (AUDIO_COMMANDS.has(commandKey)) {
+          await ChatState.setRecording(chat);
+        } else {
+          await ChatState.setTyping(chat);
+        }
+      }
+
+      const handler = commandHandlers[commandKey];
+      if (!handler) {
+        logger.error({ command }, "Command handler not found");
+        await message.reply("This command is not implemented yet.");
+        return;
+      }
+
+      await handler(message, args);
+      await Commands.updateOne(
+        { name: commandKey },
+        {
+          $inc: { usageCount: 1 },
+          $set: { lastUsed: new Date() },
+        },
+      );
+    } catch (error) {
+      logger.error({ err: error }, "Error executing command");
+      await message.reply("Error executing command. Please try again later.");
+    } finally {
+      await ChatState.clear(chat);
+    }
+  }
+
+  async handleAIResponse(message, chat) {
+    try {
+      const { response, command, terminate } = await generateAIResponse(
+        message.body,
+      );
+
+      await message.reply(response);
+
+      if (command) {
+        await handleCommand(command, chat);
+      }
+
+      // Optionally log or handle the `terminate` flag
+      if (terminate) {
+        logger.info(
+          `Conversation with chat ${chat.id} is marked as terminated.`,
+        );
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Error generating AI response");
+      await message.reply("Sorry, I had trouble generating a response.");
+    } finally {
+      await ChatState.clear(chat);
+    }
+  }
+
+  async processQueue() {
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      await this.processMessage(message);
+    }
+  }
+
+  start() {
+    setInterval(() => this.processQueue(), this.processingInterval);
+  }
+}
+
+export const messageHandler = new MessageHandler();
