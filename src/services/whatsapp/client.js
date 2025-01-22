@@ -31,7 +31,6 @@ class WhatsAppClient {
             "--disable-dev-shm-usage",
             "--disable-accelerated-2d-canvas",
             "--disable-gpu",
-            "--proxy-server=http://127.0.0.1:8002",
           ],
         },
       });

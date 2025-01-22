@@ -1,16 +1,6 @@
 # Use a Node.js image with a specific version
 FROM node:20-bullseye
 
-# Set proxy environment variables for the build process
-ARG HTTP_PROXY=http://pegpxagi-rotate:gzwdaqakp5wr@198.23.239.134:6540
-ARG HTTPS_PROXY=http://pegpxagi-rotate:gzwdaqakp5wr@198.23.239.134:6540
-ARG NO_PROXY=localhost,127.0.0.1
-
-# Pass proxy settings to environment variables
-ENV HTTP_PROXY=$HTTP_PROXY
-ENV HTTPS_PROXY=$HTTPS_PROXY
-ENV NO_PROXY=$NO_PROXY
-
 # Install Chrome dependencies
 RUN apt-get update \
     && apt-get install -y \
