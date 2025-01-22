@@ -149,7 +149,6 @@ export class MessageHandler {
     this.processingInterval = processingInterval;
   }
 
-
   setClient(client) {
     this.client = client;
   }
@@ -167,67 +166,107 @@ export class MessageHandler {
 
   async processMessage(message) {
     const chat = await message.getChat();
+    const chatId = typeof chat.id === "object" ? chat.id._serialized : chat.id;
+    const authorId = message.author ? message.author.split("@")[0] : "unknown";
+    const logContext = `[Chat: ${chatId} | Author: ${authorId}]`;
+    const isGroupMessage = message.from.includes("@g.us");
+    const isNormalChat = message.from.includes("@c.us");
+    const isBotMentioned = this.checkBotMention(message);
 
     try {
+      if (!isGroupMessage && !isNormalChat) return;
+      console.log(
+        `${logContext} Processing message: ${message.body.substring(0, 50)}...`,
+      );
+
       // Handle commands
       if (message.body.startsWith("!")) {
+        console.log(`${logContext} Processing command`);
         await this.handleCommand(message, chat);
         return;
       }
 
       // Process media
-      const mediaResult = await handleMediaExtraction(message);
-      if (mediaResult.processed) {
-        await ChatState.clear(chat);
-        return;
-      }
-
-      // Check if the bot is mentioned in a group chat
-      if (
-        chat.isGroup &&
-        messags.includes("ai")
-      ) {
-        this.usersToRespondTo.add(message.author);
-        await message.reply("Got it! I'll start responding to you.");
-        return;
-      }
-
-      // Skip processing if the message is a reply to someone other than the bot
-      if (message.hasQuotedMsg) {
-        const quotedMessage = await message.getQuotedMessage();
-        if (quotedMessage.author !== ("@⁨mōe🫐⁩")) {
+      try {
+        const mediaResult = await handleMediaExtraction(message);
+        if (mediaResult.processed) {
+          console.log(`${logContext} Media processed successfully`);
+          await ChatState.clear(chat);
           return;
         }
+      } catch (mediaError) {
+        console.error(`${logContext} Error processing media:`, mediaError);
       }
 
+      // Check for bot mentions and add user if not already in the set
+      if (!this.usersToRespondTo.has(message.author) && isBotMentioned) {
+	this.usersToRespondTo.add(message.author);
+          await message.reply("Hello! How can I assist you?");
+          return; // Prevent further processing
+}
       // Generate voice if needed
-      await generateVoiceIfNeeded(message.body, message);
+      try {
+        await generateVoiceIfNeeded(message.body, message);
+      } catch (voiceError) {
+        console.error(`${logContext} Error generating voice:`, voiceError);
+      }
 
-      // Check if AI is enabled and the user is in the set
-      if ((await shouldUseAI()) && this.usersToRespondTo.has(message.author)) {
+      // Process AI response
+      const shouldRespond = await this.shouldRespond(message);
+      if (shouldRespond) {
         await ChatState.setTyping(chat);
-
-        const aiResponse = await this.handleAIResponse(message, chat);
-
-        // If AI response has "terminate: true", remove the user from the set
-        if (aiResponse.terminate) {
-          usersToRespondTo.delete(message.author);
-          await message.reply("Alright, I'll stop responding to you for now.");
+        try {
+          const aiResponse = await this.handleAIResponse(message, chat);
+        } catch (aiError) {
+          console.error(`${logContext} Error generating AI response:`, aiError);
+          // Don't throw here, just log the error
         }
       }
 
       await ChatState.clear(chat);
     } catch (error) {
+      console.error(`${logContext} Fatal error processing message:`, error);
       await ChatState.clear(chat);
-      logger.error({ err: error }, "Error processing message");
-      await message.reply("Sorry, there was an error processing your message.");
+      await message.reply(
+        "I encountered an error processing your message. Please try again later.",
+      );
+    }
+  }
+  async shouldRespond(message) {
+    try {
+      const aiEnabled = await shouldUseAI();
+      const isReplyToBot =
+        message.hasQuotedMsg &&
+        (await message.getQuotedMessage()).from === message.to;
+      const isMediaMessage = message.hasMedia;
+
+      return (
+        aiEnabled &&
+        this.usersToRespondTo.has(message.author) &&
+        !isMediaMessage &&
+        (!message.hasQuotedMsg || isReplyToBot)
+      );
+    } catch (error) {
+      console.error("Error checking if should respond:", error);
+      return false;
     }
   }
 
-  async handleCommand(message, chat) {
-    const [command, ...args] = message.body.slice(1).split(" ");
-    const commandKey = command.toLowerCase();
+  checkBotMention(message) {
+    const isMentioned = message.mentionedIds?.includes(message.to);
+    if (isMentioned) {
+      return true;
+    }
+  }
 
+  async handleCommand(message, chat, commandFromAI = null) {
+    // If command is from AI, use it directly. Otherwise, parse from message
+    const commandParts = commandFromAI
+      ? commandFromAI.slice(1).split(" ")
+      : message.body.slice(1).split(" ");
+
+    const [command, ...args] = commandParts;
+    const commandKey = command.toLowerCase();
     try {
       const commandDoc = await Commands.findOne({ name: commandKey });
 
@@ -281,14 +320,12 @@ export class MessageHandler {
       await message.reply(response);
 
       if (command) {
-        await handleCommand(command, chat);
+        await this.handleCommand(message, chat, command);
       }
 
       // Optionally log or handle the `terminate` flag
       if (terminate) {
-        logger.info(
-          `Conversation with chat ${chat.id} is marked as terminated.`,
-        );
+        this.usersToRespondTo.delete(message.author);
       }
     } catch (error) {
       logger.error({ err: error }, "Error generating AI response");
