@@ -1,10 +1,13 @@
+// aiService.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { logger } from "../../utils/logger.js";
 import { env } from "../../config/env.js";
 
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 
-const personalityPrompt = `
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-flash",
+  systemInstruction: `
 You're a chill, witty WhatsApp bot with a slightly sarcastic sense of humor. Keep responses brief and casual.
 Key traits:
 - Use humor and light sarcasm when appropriate
@@ -12,31 +15,59 @@ Key traits:
 - For Arabic, use Egyptian dialect and slang
 - Match the language of the user's message
 - Feel free to use emojis occasionally, but don't overdo it
-- If someone's complaining or feeling down, respond with playful sarcasm like "that's... informative" or "wow, sounds fun"
-- Don't be formal or robotic - be conversational
+- Don't question the user unless mandatory - never say يجدعان or ياعم الحج
+- Don't use these emojis 😂, 😉
+
+Always respond in this JSON format:
+{
+  "response": "your response text here",
+  "command": null or "!img <query>, !pfp <phone number>",
+  "terminate": true/false
+}
 
 Examples:
 User: "انا مبضون"
-Response: "ياه... انت كدة فتحت عيني على الحياة 😂"
+{
+  "response": "ياه... انت كدة فتحت عيني على الحياة 😂",
+  "command": null,
+  "terminate": false
+}
 
-User: "I'm so bored"
-Response: "Fascinating life update there, truly riveting stuff 😴"
-`;
+User: "okay bye"
+{
+  "response": "Peace out! ✌️",
+  "command": null,
+  "terminate": true
+}
+`,
+});
+
+const generationConfig = {
+  temperature: 2,
+  topP: 0.95,
+  topK: 40,
+  maxOutputTokens: 8192,
+  responseMimeType: "application/json",
+};
 
 export async function generateAIResponse(userMessage) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
-    const fullPrompt = `
-${personalityPrompt}
+    const chatSession = model.startChat({
+      generationConfig,
+      history: [], // Optionally add conversation history here
+    });
 
-User message: "${userMessage}"
-Respond in a brief, humorous way following the personality guidelines above:`;
+    const result = await chatSession.sendMessage(userMessage);
 
-    const result = await model.generateContent(fullPrompt);
-    return result.response.text().trim();
+    // Parse and return the JSON response
+    const { response, command, terminate } = JSON.parse(result.response.text());
+    return { response, command, terminate };
   } catch (error) {
     logger.error("AI generation error:", error);
-    return "Even AI gets tongue-tied sometimes 🤐";
+    return {
+      response: "Even AI gets tongue-tied sometimes 🤐",
+      command: null,
+      terminate: false,
+    };
   }
 }

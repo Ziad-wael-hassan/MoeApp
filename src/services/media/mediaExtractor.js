@@ -22,7 +22,8 @@ const axiosInstance = axios.create({
   timeout: 30000,
   maxRedirects: 10,
   headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     Accept: "image/*, video/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
@@ -71,7 +72,7 @@ function manageCache() {
 
 // Download media
 async function downloadMedia(url) {
-  if (!url) throw new Error('Invalid media URL');
+  if (!url) throw new Error("Invalid media URL");
 
   const response = await axiosInstance.get(url, {
     responseType: "arraybuffer",
@@ -80,7 +81,8 @@ async function downloadMedia(url) {
 
   const buffer = Buffer.from(response.data);
   const base64 = buffer.toString("base64");
-  const mimeType = response.headers["content-type"] || "application/octet-stream";
+  const mimeType =
+    response.headers["content-type"] || "application/octet-stream";
 
   return { base64, mimeType };
 }
@@ -88,7 +90,7 @@ async function downloadMedia(url) {
 // Extract media URL based on platform
 async function extractMediaUrl(url, mediaType) {
   if (!url || !mediaType) {
-    throw new Error('Invalid URL or media type');
+    throw new Error("Invalid URL or media type");
   }
 
   const extractors = {
@@ -105,12 +107,15 @@ async function extractMediaUrl(url, mediaType) {
   try {
     const extractPromise = extractor(url);
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Media extraction timed out')), PROCESSING_TIMEOUT)
+      setTimeout(
+        () => reject(new Error("Media extraction timed out")),
+        PROCESSING_TIMEOUT,
+      ),
     );
 
     return await Promise.race([extractPromise, timeoutPromise]);
   } catch (error) {
-    logger.error('Media extraction failed');
+    logger.error("Media extraction failed");
     throw error;
   }
 }
@@ -149,7 +154,7 @@ async function sendMedia(url, message) {
 
     return true;
   } catch (error) {
-    logger.error('Error in extracting URL');
+    logger.error("Error in extracting URL");
     return false;
   }
 }
@@ -167,7 +172,7 @@ export async function handleMediaExtraction(message) {
 
     const chat = await message.getChat();
     await chat.sendStateTyping();
-    
+
     const success = await sendMedia(url, message);
 
     return {
@@ -176,7 +181,7 @@ export async function handleMediaExtraction(message) {
       url,
     };
   } catch (error) {
-    logger.error('Error in handling media');
+    logger.error("Error in handling media");
     return { processed: false, error: error.message };
   }
 }

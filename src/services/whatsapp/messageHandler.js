@@ -52,7 +52,8 @@ async function shouldUseAI() {
 async function generateVoiceIfNeeded(text, message) {
   try {
     const contact = await message.getContact();
-    const isMetaAI = contact.name === "Meta AI" || contact.pushname === "Meta AI";
+    const isMetaAI =
+      contact.name === "Meta AI" || contact.pushname === "Meta AI";
 
     if (!isMetaAI) {
       return;
@@ -62,7 +63,7 @@ async function generateVoiceIfNeeded(text, message) {
       const client = whatsappClient.getClient();
       const reloadedMessage = await waitForCompleteMessage(
         client,
-        message.id._serialized
+        message.id._serialized,
       );
       text = reloadedMessage.body;
     } catch (error) {
@@ -75,7 +76,9 @@ async function generateVoiceIfNeeded(text, message) {
       await chat.sendStateRecording();
       const { base64, mimeType } = await textToSpeech(text);
       const media = new MessageMedia(mimeType, base64);
-      await message.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
+      await message.reply(media, chat.id._serialized, {
+        sendAudioAsVoice: true,
+      });
     }
   } catch (error) {
     logger.error({ err: error }, "Error generating voice for message");
@@ -141,6 +144,7 @@ function commandWillRespond(command, args, hasQuotedMsg) {
 export class MessageHandler {
   constructor(processingInterval = 1000) {
     this.messageQueue = [];
+    this.usersToRespondTo = new Set();
     this.processingInterval = processingInterval;
   }
 
@@ -159,26 +163,51 @@ export class MessageHandler {
     const chat = await message.getChat();
 
     try {
+      // Handle commands
       if (message.body.startsWith("!")) {
         await this.handleCommand(message, chat);
         return;
       }
 
-      // For non-command messages, only show typing if AI is enabled
-      if (await shouldUseAI()) {
-        await ChatState.setTyping(chat);
-      }
-
+      // Process media
       const mediaResult = await handleMediaExtraction(message);
       if (mediaResult.processed) {
         await ChatState.clear(chat);
         return;
       }
 
+      // Check if the bot is mentioned in a group chat
+      if (
+        chat.isGroup &&
+        message.mentionedIds.includes(await this.getBotId())
+      ) {
+        usersToRespondTo.add(message.author);
+        await message.reply("Got it! I'll start responding to you.");
+        return;
+      }
+
+      // Skip processing if the message is a reply to someone other than the bot
+      if (message.hasQuotedMsg) {
+        const quotedMessage = await message.getQuotedMessage();
+        if (quotedMessage.author !== (await this.getBotId())) {
+          return;
+        }
+      }
+
+      // Generate voice if needed
       await generateVoiceIfNeeded(message.body, message);
 
-      if (await shouldUseAI()) {
-        await this.handleAIResponse(message, chat);
+      // Check if AI is enabled and the user is in the set
+      if ((await shouldUseAI()) && usersToRespondTo.has(message.author)) {
+        await ChatState.setTyping(chat);
+
+        const aiResponse = await this.handleAIResponse(message, chat);
+
+        // If AI response has "terminate: true", remove the user from the set
+        if (aiResponse.terminate) {
+          usersToRespondTo.delete(message.author);
+          await message.reply("Alright, I'll stop responding to you for now.");
+        }
       }
 
       await ChatState.clear(chat);
@@ -239,9 +268,22 @@ export class MessageHandler {
 
   async handleAIResponse(message, chat) {
     try {
-      const response = await generateAIResponse(message.body);
+      const { response, command, terminate } = await generateAIResponse(
+        message.body,
+      );
 
       await message.reply(response);
+
+      if (command) {
+        await handleCommand(command, chat);
+      }
+
+      // Optionally log or handle the `terminate` flag
+      if (terminate) {
+        logger.info(
+          `Conversation with chat ${chat.id} is marked as terminated.`,
+        );
+      }
     } catch (error) {
       logger.error({ err: error }, "Error generating AI response");
       await message.reply("Sorry, I had trouble generating a response.");
