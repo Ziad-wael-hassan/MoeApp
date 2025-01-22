@@ -91,7 +91,8 @@ async function initialize() {
 
     // Initialize WhatsApp client
     await whatsappClient.initialize();
-
+    
+    messageHandler.setClient(whatsappClient.getClient());
     // Start message handler
     messageHandler.start();
 

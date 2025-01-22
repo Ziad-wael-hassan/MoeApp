@@ -145,7 +145,13 @@ export class MessageHandler {
   constructor(processingInterval = 1000) {
     this.messageQueue = [];
     this.usersToRespondTo = new Set();
+    this.client = null;
     this.processingInterval = processingInterval;
+  }
+
+
+  setClient(client) {
+    this.client = client;
   }
 
   async handleMessage(message) {
@@ -179,9 +185,9 @@ export class MessageHandler {
       // Check if the bot is mentioned in a group chat
       if (
         chat.isGroup &&
-        message.mentionedIds.includes(await this.getBotId())
+        messags.includes("ai")
       ) {
-        usersToRespondTo.add(message.author);
+        this.usersToRespondTo.add(message.author);
         await message.reply("Got it! I'll start responding to you.");
         return;
       }
@@ -189,7 +195,7 @@ export class MessageHandler {
       // Skip processing if the message is a reply to someone other than the bot
       if (message.hasQuotedMsg) {
         const quotedMessage = await message.getQuotedMessage();
-        if (quotedMessage.author !== (await this.getBotId())) {
+        if (quotedMessage.author !== ("@⁨mōe🫐⁩")) {
           return;
         }
       }
@@ -198,7 +204,7 @@ export class MessageHandler {
       await generateVoiceIfNeeded(message.body, message);
 
       // Check if AI is enabled and the user is in the set
-      if ((await shouldUseAI()) && usersToRespondTo.has(message.author)) {
+      if ((await shouldUseAI()) && this.usersToRespondTo.has(message.author)) {
         await ChatState.setTyping(chat);
 
         const aiResponse = await this.handleAIResponse(message, chat);

@@ -45,7 +45,6 @@ function validateEnv() {
 
     return env;
   } catch (error) {
-
     console.error(
       "Environment validation failed:",
       JSON.stringify(error.errors, null, 2),
