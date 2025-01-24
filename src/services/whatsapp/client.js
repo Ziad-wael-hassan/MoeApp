@@ -73,7 +73,7 @@ class WhatsAppClient {
 
     this.client.on("ready", async () => {
       console.log("WhatsApp bot is ready!");
-      isAuthenticated = true;
+      this.isAuthenticated = true;
       reconnectAttempts = 0;
 
       const adminPhones = env.ADMIN?.split(",") || [];
