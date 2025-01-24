@@ -37,8 +37,6 @@ class WhatsAppClient {
 
       this.setupEventHandlers();
       await this.client.initialize();
-
-      // Initialize commands in database
       await this.initializeCommands();
     } catch (error) {
       logger.error({ err: error }, "Failed to initialize WhatsApp client");
@@ -54,49 +52,34 @@ class WhatsAppClient {
   }
 
   setupEventHandlers() {
-    this.client.on("authenticated", () => {
-      logger.info("WhatsApp client authenticated");
-      this.isAuthenticated = true;
-    });
+    this.client.on("authenticated", () => this.handleAuthenticated());
+    this.client.on("auth_failure", (error) => this.handleAuthFailure(error));
+    this.client.on("disconnected", (reason) => this.handleDisconnected(reason));
+    this.client.on("ready", () => this.handleReady());
+    this.client.on("message", (message) => messageHandler.handleMessage(message));
+  }
 
-    this.client.on("auth_failure", (error) => {
-      logger.error({ err: error }, "WhatsApp authentication failed");
-      this.isAuthenticated = false;
-      this.handleReconnect();
-    });
+  handleAuthenticated() {
+    logger.info("WhatsApp client authenticated");
+    this.isAuthenticated = true;
+  }
 
-    this.client.on("disconnected", (reason) => {
-      logger.warn("WhatsApp client disconnected:", reason);
-      this.isAuthenticated = false;
-      this.handleReconnect();
-    });
+  handleAuthFailure(error) {
+    logger.error({ err: error }, "WhatsApp authentication failed");
+    this.isAuthenticated = false;
+    this.handleReconnect();
+  }
 
-    this.client.on("ready", async () => {
-      this.isAuthenticated = true;
-      this.reconnectAttempts = 0;
+  handleDisconnected(reason) {
+    logger.warn("WhatsApp client disconnected:", reason);
+    this.isAuthenticated = false;
+    this.handleReconnect();
+  }
 
-      const adminPhones = env.ADMIN || [];
-      await Promise.all(
-        adminPhones.map(async (adminPhone) => {
-          try {
-            const chatId = `${adminPhone}@c.us`;
-            this.client.sendMessage(chatId, "Bot is online and ready!");
-            logger.info(
-              `Message sent to admin (${adminPhone})`,
-            );
-          } catch (error) {
-            console.error(
-              `Error sending message to admin (${adminPhone}):`,
-              error,
-            );
-          }
-        }),
-      );
-    });
-
-    this.client.on("message", async (message) => {
-      messageHandler.handleMessage(message);
-    });
+  async handleReady() {
+    this.isAuthenticated = true;
+    this.reconnectAttempts = 0;
+    await this.notifyAdmins("Bot is online and ready!");
   }
 
   async handleReconnect() {
@@ -106,9 +89,7 @@ class WhatsAppClient {
     }
 
     this.reconnectAttempts++;
-    logger.info(
-      `Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`,
-    );
+    logger.info(`Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`);
 
     setTimeout(async () => {
       try {
@@ -120,6 +101,21 @@ class WhatsAppClient {
     }, this.RECONNECT_DELAY);
   }
 
+  async notifyAdmins(message) {
+    const adminPhones = env.ADMIN || [];
+    await Promise.all(
+      adminPhones.map(async (adminPhone) => {
+        try {
+          const chatId = `${adminPhone}@c.us`;
+          await this.client.sendMessage(chatId, message);
+          logger.info(`Message sent to admin (${adminPhone})`);
+        } catch (error) {
+          console.error(`Error sending message to admin (${adminPhone}):`, error);
+        }
+      }),
+    );
+  }
+
   async initializeCommands() {
     const defaultCommands = [
       {
@@ -128,8 +124,7 @@ class WhatsAppClient {
         adminOnly: false,
         usageCount: 0,
         category: "general",
-        description:
-          "Displays a list of all available commands and their usage",
+        description: "Displays a list of all available commands and their usage",
         usage: "!help [command]",
       },
       {
@@ -156,8 +151,7 @@ class WhatsAppClient {
         adminOnly: false,
         usageCount: 0,
         category: "utility",
-        description:
-          "Retrieves the profile picture of a mentioned user or number",
+        description: "Retrieves the profile picture of a mentioned user or number",
         usage: "!pfp <@mention or number>",
       },
       {
@@ -195,6 +189,15 @@ class WhatsAppClient {
         category: "admin",
         description: "Sends a message to a specified user through the bot",
         usage: "!msg <@mention or number> <message>",
+      },
+      {
+        name: "remind",
+        enabled: true,
+        adminOnly: true,
+        usageCount: 0,
+        category: "admin",
+        description: "Schedules a reminder for a specified user through the bot",
+        usage: "!remind <time in 24-hour format> [number/mention]",
       },
     ];
 

@@ -8,6 +8,7 @@ import { connectDB, closeDB } from "./config/database.js";
 import { logger } from "./utils/logger.js";
 import { env } from "./config/env.js";
 import dotenv from "dotenv";
+import { reloadScheduledReminders } from "./utils/scheduler.js";
 
 dotenv.config();
 
@@ -86,15 +87,25 @@ app.use((err, req, res, next) => {
 // Initialize services
 async function initialize() {
   try {
-    // Connect to MongoDB
+    logger.info("Connecting to MongoDB...");
     await connectDB();
+    logger.info("Connected to MongoDB");
 
-    // Initialize WhatsApp client
+    logger.info("Initializing WhatsApp client...");
     await whatsappClient.initialize();
+    logger.info("WhatsApp client initialized");
 
     messageHandler.setClient(whatsappClient.getClient());
+    logger.info("Message handler client set");
+
     // Start message handler
     messageHandler.start();
+    logger.info("Message handler started");
+
+    // Reload scheduled reminders
+    logger.info("Reloading scheduled reminders...");
+    await reloadScheduledReminders();
+    logger.info("Scheduled reminders reloaded");
 
     // Start Express server
     app.listen(env.PORT, () => {

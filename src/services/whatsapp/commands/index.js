@@ -3,6 +3,7 @@ import { Commands, Settings } from "../../../config/database.js";
 import { logger } from "../../../utils/logger.js";
 import gis from "async-g-i-s";
 import WhatsAppWeb from "whatsapp-web.js";
+import { scheduleReminder } from "../../../utils/scheduler.js";
 
 const { MessageMedia } = WhatsAppWeb;
 
@@ -231,15 +232,61 @@ export const commandHandlers = {
       if (message.mentionedIds.length > 0) {
         targetNumber = message.mentionedIds[0];
       } else {
-        targetNumber = `${args[0].replace(/[^0-9]/g, "")}@c.us`;
+        // Extract the number from the args until a non-numeric argument is found
+        const numberParts = [];
+        while (args.length > 0 && /^[0-9]+$/.test(args[0].replace(/[^0-9]/g, ""))) {
+          numberParts.push(args.shift().replace(/[^0-9]/g, ""));
+        }
+        targetNumber = `${numberParts.join("")}@c.us`;
       }
 
-      const messageText = args.slice(1).join(" ");
+      const messageText = args.join(" ");
       await message.client.sendMessage(targetNumber, messageText);
       await message.reply("Message sent successfully.");
     } catch (error) {
       logger.error({ err: error }, "Error in msg command:");
       await message.reply("Failed to send message.");
+    }
+  },
+
+  async remind(message, args) {
+    if (!(await isAdmin(message))) {
+      await message.reply("This command is for admins only.");
+      return;
+    }
+
+    if (args.length < 1) {
+      await message.reply("Usage: !remind <time in 24-hour format> [number/mention]");
+      return;
+    }
+
+    try {
+      let targetNumber;
+      if (args.length === 1 || args[0].toLowerCase() === "me") {
+        // Remind the user themselves
+        const contact = await message.getContact();
+        targetNumber = `${contact.number}@c.us`;
+        if (args[0].toLowerCase() === "me") {
+          args.shift(); // Remove "me" from args
+        }
+      } else if (message.mentionedIds.length > 0) {
+        targetNumber = message.mentionedIds[0];
+      } else {
+        targetNumber = `${args[1].replace(/[^0-9]/g, "")}@c.us`;
+      }
+
+      const time = args[0];
+      const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+      if (!timeRegex.test(time)) {
+        await message.reply("Invalid time format. Please use HH:MM in 24-hour format.");
+        return;
+      }
+
+      await scheduleReminder(targetNumber, time);
+      await message.reply(`Reminder scheduled to ${targetNumber} at ${time}.`);
+    } catch (error) {
+      logger.error({ err: error }, "Error in remind command:");
+      await message.reply("Failed to schedule reminder.");
     }
   },
 };

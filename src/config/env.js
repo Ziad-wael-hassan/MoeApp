@@ -43,9 +43,12 @@ function validateEnv() {
   try {
     const env = envSchema.parse(process.env);
 
-    return env;
+    return {
+      ...env,
+      NODE_ENV: process.env.NODE_ENV || "production",
+    };
   } catch (error) {
-    console.error(
+    logger.error(
       "Environment validation failed:",
       JSON.stringify(error.errors, null, 2),
     );

@@ -46,9 +46,10 @@ let client = null;
 
 export async function connectDB() {
   try {
-    client = await MongoClient.connect(env.MONGODB_URI);
+    client = await MongoClient.connect(env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     papr.initialize(client.db("whatsapp-bot-test-v1"));
     await papr.updateSchemas();
+    logger.info("MongoDB connected and schemas updated");
   } catch (error) {
     logger.error({ err: error }, "MongoDB connection error");
     throw error;
