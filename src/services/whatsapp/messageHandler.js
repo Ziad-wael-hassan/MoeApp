@@ -254,10 +254,23 @@ export class MessageHandler {
   checkBotMention(message) {
     const isMentioned = message.mentionedIds?.includes(message.to);
     if (isMentioned) {
-      return true;
+        const messageText = message.body.trim();
+        const mentionText = `@${message.to.split("@")[0]}`;
+    
+        // Check if there's text along with the mention
+        const remainingText = messageText.replace(mentionText, "").trim();
+        if (remainingText.length > 0) {
+            this.usersToRespondTo.add(message.author);
+        } else {
+            if (!this.usersToRespondTo.has(message.author)) {
+                this.usersToRespondTo.add(message.author);
+            }
+        }
+        return true;
     }
-  }
-
+    return false;
+ }
+ 
   async handleCommand(message, chat, commandFromAI = null) {
     // If command is from AI, use it directly. Otherwise, parse from message
     const commandParts = commandFromAI
@@ -331,6 +344,7 @@ export class MessageHandler {
 
       // If terminate is true, clear this user's chat history
       if (terminate) {
+        await message.react("✅");
         this.usersToRespondTo.delete(message.author);
         ChatHistoryManager.clearHistory(userId);
       }

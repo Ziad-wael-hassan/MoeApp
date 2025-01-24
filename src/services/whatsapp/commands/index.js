@@ -107,25 +107,28 @@ export const commandHandlers = {
     );
   },
 
-  async pfp(message, args) {
+  async pfp(message) {
     try {
       let targetContact;
-      if (message.mentionedIds.length > 0) {
+  
+      // Extract numbers from the message body
+      const number = message.body.replace(/[^0-9]/g, "");
+  
+      if (!number) {
         targetContact = await message.getContact();
-      } else if (args.length > 0) {
-        const number = args.join("").replace(/[^0-9]/g, "");
+      } else if (number.length > 0) {
         targetContact = await message.client.getContactById(`${number}@c.us`);
       } else {
         await message.reply("Please mention a user or provide their number.");
         return;
       }
-
+  
       const profilePic = await targetContact.getProfilePicUrl();
       if (!profilePic) {
         await message.reply("No profile picture found.");
         return;
       }
-
+  
       const media = await MessageMedia.fromUrl(profilePic);
       await message.reply(media);
     } catch (error) {
@@ -133,7 +136,7 @@ export const commandHandlers = {
       await message.reply("Failed to fetch profile picture.");
     }
   },
-
+  
   async logs(message) {
     if (!(await isAdmin(message))) {
       await message.reply("This command is for admins only.");
