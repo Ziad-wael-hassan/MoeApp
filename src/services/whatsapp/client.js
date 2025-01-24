@@ -81,7 +81,7 @@ class WhatsAppClient {
         adminPhones.map(async (adminPhone) => {
           try {
             const chatId = `${adminPhone}@c.us`;
-            const sentMessage = await messageQueue.add(chatId, "Bot is ready!");
+            client.sendMessage(`${phone}@c.us`, "Bot is online and ready!");
             console.log(
               `Message sent to admin (${adminPhone}): ${sentMessage.body}`,
             );
