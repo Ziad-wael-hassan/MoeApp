@@ -56,7 +56,9 @@ class WhatsAppClient {
     this.client.on("auth_failure", (error) => this.handleAuthFailure(error));
     this.client.on("disconnected", (reason) => this.handleDisconnected(reason));
     this.client.on("ready", () => this.handleReady());
-    this.client.on("message", (message) => messageHandler.handleMessage(message));
+    this.client.on("message", (message) =>
+      messageHandler.handleMessage(message),
+    );
   }
 
   handleAuthenticated() {
@@ -89,7 +91,9 @@ class WhatsAppClient {
     }
 
     this.reconnectAttempts++;
-    logger.info(`Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`);
+    logger.info(
+      `Attempting to reconnect (${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`,
+    );
 
     setTimeout(async () => {
       try {
@@ -110,7 +114,10 @@ class WhatsAppClient {
           await this.client.sendMessage(chatId, message);
           logger.info(`Message sent to admin (${adminPhone})`);
         } catch (error) {
-          console.error(`Error sending message to admin (${adminPhone}):`, error);
+          console.error(
+            `Error sending message to admin (${adminPhone}):`,
+            error,
+          );
         }
       }),
     );
@@ -124,7 +131,8 @@ class WhatsAppClient {
         adminOnly: false,
         usageCount: 0,
         category: "general",
-        description: "Displays a list of all available commands and their usage",
+        description:
+          "Displays a list of all available commands and their usage",
         usage: "!help [command]",
       },
       {
@@ -151,7 +159,8 @@ class WhatsAppClient {
         adminOnly: false,
         usageCount: 0,
         category: "utility",
-        description: "Retrieves the profile picture of a mentioned user or number",
+        description:
+          "Retrieves the profile picture of a mentioned user or number",
         usage: "!pfp <@mention or number>",
       },
       {
@@ -193,10 +202,11 @@ class WhatsAppClient {
       {
         name: "remind",
         enabled: true,
-        adminOnly: true,
+        adminOnly: false,
         usageCount: 0,
-        category: "admin",
-        description: "Schedules a reminder for a specified user through the bot",
+        category: "utility",
+        description:
+          "Schedules a reminder for a specified user through the bot",
         usage: "!remind <time in 24-hour format> [number/mention]",
       },
     ];

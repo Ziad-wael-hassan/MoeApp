@@ -40,11 +40,15 @@ async function shouldUseAI() {
 async function generateVoiceIfNeeded(text, message) {
   try {
     const contact = await message.getContact();
-    const isMetaAI = contact.name === "Meta AI" || contact.pushname === "Meta AI";
+    const isMetaAI =
+      contact.name === "Meta AI" || contact.pushname === "Meta AI";
     if (!isMetaAI) return;
 
     const client = whatsappClient.getClient();
-    const reloadedMessage = await waitForCompleteMessage(client, message.id._serialized);
+    const reloadedMessage = await waitForCompleteMessage(
+      client,
+      message.id._serialized,
+    );
     text = reloadedMessage.body;
 
     if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
@@ -52,7 +56,9 @@ async function generateVoiceIfNeeded(text, message) {
       await chat.sendStateRecording();
       const { base64, mimeType } = await textToSpeech(text);
       const media = new MessageMedia(mimeType, base64);
-      await message.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
+      await message.reply(media, chat.id._serialized, {
+        sendAudioAsVoice: true,
+      });
     }
   } catch (error) {
     logger.error({ err: error }, "Error generating voice for message");
@@ -131,7 +137,9 @@ export class MessageHandler {
     const isBotMentioned = this.checkBotMention(message);
 
     if (!isGroupMessage && !isNormalChat) return;
-    console.log(`${logContext} Processing message: ${message.body.substring(0, 50)}...`);
+    console.log(
+      `${logContext} Processing message: ${message.body.substring(0, 50)}...`,
+    );
 
     try {
       if (message.body.startsWith("!")) {
@@ -165,17 +173,26 @@ export class MessageHandler {
     } catch (error) {
       console.error(`${logContext} Fatal error processing message:`, error);
       await ChatState.clear(chat);
-      await message.reply("I encountered an error processing your message. Please try again later.");
+      await message.reply(
+        "I encountered an error processing your message. Please try again later.",
+      );
     }
   }
 
   async shouldRespond(message) {
     try {
       const aiEnabled = await shouldUseAI();
-      const isReplyToBot = message.hasQuotedMsg && (await message.getQuotedMessage()).from === message.to;
+      const isReplyToBot =
+        message.hasQuotedMsg &&
+        (await message.getQuotedMessage()).from === message.to;
       const isMediaMessage = message.hasMedia;
 
-      return aiEnabled && this.usersToRespondTo.has(message.author) && !isMediaMessage && (!message.hasQuotedMsg || isReplyToBot);
+      return (
+        aiEnabled &&
+        this.usersToRespondTo.has(message.author) &&
+        !isMediaMessage &&
+        (!message.hasQuotedMsg || isReplyToBot)
+      );
     } catch (error) {
       console.error("Error checking if should respond:", error);
       return false;
@@ -188,7 +205,10 @@ export class MessageHandler {
       const messageText = message.body.trim();
       const mentionText = `@${message.to.split("@")[0]}`;
       const remainingText = messageText.replace(mentionText, "").trim();
-      if (remainingText.length > 0 || !this.usersToRespondTo.has(message.author)) {
+      if (
+        remainingText.length > 0 ||
+        !this.usersToRespondTo.has(message.author)
+      ) {
         this.usersToRespondTo.add(message.author);
       }
       return true;
@@ -197,7 +217,9 @@ export class MessageHandler {
   }
 
   async handleCommand(message, chat, commandFromAI = null) {
-    const commandParts = commandFromAI ? commandFromAI.slice(1).split(" ") : message.body.slice(1).split(" ");
+    const commandParts = commandFromAI
+      ? commandFromAI.slice(1).split(" ")
+      : message.body.slice(1).split(" ");
     const [command, ...args] = commandParts;
     const commandKey = command.toLowerCase();
     if (commandKey === "toggleai") {
@@ -206,7 +228,11 @@ export class MessageHandler {
     try {
       const commandDoc = await Commands.findOne({ name: commandKey });
       if (!commandDoc || !commandDoc.enabled) {
-        await message.reply(!commandDoc ? "Unknown command. Use !help to see available commands." : "This command is currently disabled.");
+        await message.reply(
+          !commandDoc
+            ? "Unknown command. Use !help to see available commands."
+            : "This command is currently disabled.",
+        );
         return;
       }
 
@@ -226,7 +252,10 @@ export class MessageHandler {
       }
 
       await handler(message, args);
-      await Commands.updateOne({ name: commandKey }, { $inc: { usageCount: 1 }, $set: { lastUsed: new Date() } });
+      await Commands.updateOne(
+        { name: commandKey },
+        { $inc: { usageCount: 1 }, $set: { lastUsed: new Date() } },
+      );
     } catch (error) {
       logger.error({ err: error }, "Error executing command");
       await message.reply("Error executing command. Please try again later.");
@@ -238,7 +267,10 @@ export class MessageHandler {
   async handleAIResponse(message, chat) {
     try {
       const userId = message.author;
-      const { response, command, terminate } = await generateAIResponse(message.body, userId);
+      const { response, command, terminate } = await generateAIResponse(
+        message.body,
+        userId,
+      );
 
       await message.reply(response);
 

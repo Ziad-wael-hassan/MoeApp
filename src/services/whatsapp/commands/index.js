@@ -111,10 +111,10 @@ export const commandHandlers = {
   async pfp(message) {
     try {
       let targetContact;
-  
+
       // Extract numbers from the message body
       const number = message.body.replace(/[^0-9]/g, "");
-  
+
       if (!number) {
         targetContact = await message.getContact();
       } else if (number.length > 0) {
@@ -123,13 +123,13 @@ export const commandHandlers = {
         await message.reply("Please mention a user or provide their number.");
         return;
       }
-  
+
       const profilePic = await targetContact.getProfilePicUrl();
       if (!profilePic) {
         await message.reply("No profile picture found.");
         return;
       }
-  
+
       const media = await MessageMedia.fromUrl(profilePic);
       await message.reply(media);
     } catch (error) {
@@ -137,7 +137,7 @@ export const commandHandlers = {
       await message.reply("Failed to fetch profile picture.");
     }
   },
-  
+
   async logs(message) {
     if (!(await isAdmin(message))) {
       await message.reply("This command is for admins only.");
@@ -234,7 +234,10 @@ export const commandHandlers = {
       } else {
         // Extract the number from the args until a non-numeric argument is found
         const numberParts = [];
-        while (args.length > 0 && /^[0-9]+$/.test(args[0].replace(/[^0-9]/g, ""))) {
+        while (
+          args.length > 0 &&
+          /^[0-9]+$/.test(args[0].replace(/[^0-9]/g, ""))
+        ) {
           numberParts.push(args.shift().replace(/[^0-9]/g, ""));
         }
         targetNumber = `${numberParts.join("")}@c.us`;
@@ -256,7 +259,9 @@ export const commandHandlers = {
     }
 
     if (args.length < 1) {
-      await message.reply("Usage: !remind <time in 24-hour format> [number/mention]");
+      await message.reply(
+        "Usage: !remind <time in 24-hour format> [number/mention]",
+      );
       return;
     }
 
@@ -278,7 +283,9 @@ export const commandHandlers = {
       const time = args[0];
       const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
       if (!timeRegex.test(time)) {
-        await message.reply("Invalid time format. Please use HH:MM in 24-hour format.");
+        await message.reply(
+          "Invalid time format. Please use HH:MM in 24-hour format.",
+        );
         return;
       }
 
