@@ -26,13 +26,25 @@
       }
 
       body {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        background: linear-gradient(
+          135deg,
+          var(--primary) 0%,
+          var(--secondary) 100%
+        );
         min-height: 100vh;
         display: flex;
         justify-content: center;
         align-items: center;
-        font-feature-settings: 'ss01', 'ss02', 'cv01', 'cv02';
+        font-feature-settings: "ss01", "ss02", "cv01", "cv02";
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
@@ -89,7 +101,7 @@
         border-radius: 8px;
         font-size: 1rem;
         transition: border-color 0.2s;
-        font-family: 'Inter', sans-serif;
+        font-family: "Inter", sans-serif;
         font-weight: 500;
       }
 
@@ -109,7 +121,7 @@
         font-weight: 600;
         cursor: pointer;
         transition: background-color 0.2s;
-        font-family: 'Inter', sans-serif;
+        font-family: "Inter", sans-serif;
         letter-spacing: -0.01em;
       }
 
@@ -141,8 +153,12 @@
       }
 
       @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
       }
 
       .pairing-code-container {
@@ -212,11 +228,15 @@
           <div id="loginError"></div>
         </div>
 
-        <div id="loadingContainer" style="display:none;" class="loading-container">
+        <div
+          id="loadingContainer"
+          style="display: none"
+          class="loading-container"
+        >
           <div class="loading-spinner"></div>
         </div>
 
-        <div id="pairingCodeContainer" style="display:none;">
+        <div id="pairingCodeContainer" style="display: none">
           <div class="pairing-code-container">
             <div id="pairingCode" class="pairing-code"></div>
             <button id="copyBtn" class="btn copy-btn">Copy</button>
@@ -226,85 +246,88 @@
     </div>
 
     <script>
-      const phoneInput = document.getElementById('phone');
-      const apiKeyInput = document.getElementById('apiKey');
-      const submitBtn = document.getElementById('submitBtn');
-      const loginForm = document.getElementById('loginForm');
-      const loadingContainer = document.getElementById('loadingContainer');
-      const pairingCodeContainer = document.getElementById('pairingCodeContainer');
-      const pairingCodeElement = document.getElementById('pairingCode');
-      const copyBtn = document.getElementById('copyBtn');
-      const loginError = document.getElementById('loginError');
+      const phoneInput = document.getElementById("phone");
+      const apiKeyInput = document.getElementById("apiKey");
+      const submitBtn = document.getElementById("submitBtn");
+      const loginForm = document.getElementById("loginForm");
+      const loadingContainer = document.getElementById("loadingContainer");
+      const pairingCodeContainer = document.getElementById(
+        "pairingCodeContainer",
+      );
+      const pairingCodeElement = document.getElementById("pairingCode");
+      const copyBtn = document.getElementById("copyBtn");
+      const loginError = document.getElementById("loginError");
 
-      submitBtn.addEventListener('click', async () => {
-        const phone = phoneInput.value.replace(/\D/g, '');
+      submitBtn.addEventListener("click", async () => {
+        const phone = phoneInput.value.replace(/\D/g, "");
         const apiKey = apiKeyInput.value;
 
         // Validate inputs
         if (!phone || !apiKey) {
-          loginError.textContent = 'Please enter both phone number and API key';
+          loginError.textContent = "Please enter both phone number and API key";
           return;
         }
 
         // Hide form and show loading
-        loginForm.style.display = 'none';
-        loadingContainer.style.display = 'flex';
-        loginError.textContent = '';
+        loginForm.style.display = "none";
+        loadingContainer.style.display = "flex";
+        loginError.textContent = "";
 
         try {
-          const response = await fetch('/api/auth/pair', {
-            method: 'POST',
+          const response = await fetch("/api/auth/pair", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
-              'X-API-Key': apiKey
+              "Content-Type": "application/json",
+              "X-API-Key": apiKey,
             },
-            body: JSON.stringify({ phone })
+            body: JSON.stringify({ phone }),
           });
 
           const data = await response.json();
 
           // Hide loading
-          loadingContainer.style.display = 'none';
+          loadingContainer.style.display = "none";
 
           if (response.ok) {
             // Show pairing code
             pairingCodeElement.textContent = data.code;
-            pairingCodeContainer.style.display = 'block';
+            pairingCodeContainer.style.display = "block";
           } else {
             // Show error and restore form
-            loginForm.style.display = 'block';
-            loginError.textContent = data.error || 'Failed to generate pairing code';
+            loginForm.style.display = "block";
+            loginError.textContent =
+              data.error || "Failed to generate pairing code";
           }
         } catch (error) {
           // Hide loading
-          loadingContainer.style.display = 'none';
-          
+          loadingContainer.style.display = "none";
+
           // Restore form and show error
-          loginForm.style.display = 'block';
+          loginForm.style.display = "block";
           loginError.textContent = `Error: ${error.message}`;
         }
       });
 
       // Copy pairing code functionality
-      copyBtn.addEventListener('click', () => {
+      copyBtn.addEventListener("click", () => {
         const pairingCode = pairingCodeElement.textContent;
-        
+
         // Create a temporary textarea to copy the text
-        const tempTextArea = document.createElement('textarea');
+        const tempTextArea = document.createElement("textarea");
         tempTextArea.value = pairingCode;
         document.body.appendChild(tempTextArea);
         tempTextArea.select();
-        
+
         try {
-          document.execCommand('copy');
-          copyBtn.textContent = 'Copied!';
+          document.execCommand("copy");
+          copyBtn.textContent = "Copied!";
           setTimeout(() => {
-            copyBtn.textContent = 'Copy';
+            copyBtn.textContent = "Copy";
           }, 2000);
         } catch (err) {
-          console.error('Copy failed', err);
+          console.error("Copy failed", err);
         }
-        
+
         document.body.removeChild(tempTextArea);
       });
     </script>

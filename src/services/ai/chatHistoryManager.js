@@ -6,11 +6,11 @@ export const ChatHistoryManager = {
     if (!userChatHistories.has(userId)) {
       userChatHistories.set(userId, []);
     }
-    
+
     const userHistory = userChatHistories.get(userId);
     userHistory.push({
       role: role,
-      parts: [{ text: text }]
+      parts: [{ text: text }],
     });
 
     // Limit history size to prevent excessive memory usage
@@ -32,5 +32,5 @@ export const ChatHistoryManager = {
   // Clear all user histories (e.g., when AI is toggled off)
   clearAllHistories() {
     userChatHistories.clear();
-  }
+  },
 };

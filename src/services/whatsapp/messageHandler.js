@@ -9,7 +9,6 @@ import WhatsAppWeb from "whatsapp-web.js";
 import { whatsappClient } from "./client.js";
 import removeMarkdown from "remove-markdown";
 
-
 const { MessageMedia } = WhatsAppWeb;
 
 const MESSAGE_LENGTH_THRESHOLD = 300;
@@ -267,7 +266,7 @@ export class MessageHandler {
 
     const [command, ...args] = commandParts;
     const commandKey = command.toLowerCase();
-    if (commandKey === 'toggleai') {
+    if (commandKey === "toggleai") {
       ChatHistoryManager.clearAllHistories();
     }
     try {
@@ -321,7 +320,7 @@ export class MessageHandler {
 
       const { response, command, terminate } = await generateAIResponse(
         message.body,
-        userId
+        userId,
       );
 
       await message.reply(response);

@@ -76,7 +76,7 @@ class WhatsAppClient {
       this.isAuthenticated = true;
       this.reconnectAttempts = 0;
 
-      const adminPhones = env.ADMIN ? env.ADMIN.split(",").filter((phone) => /^\d+$/.test(phone)) : [];
+      const adminPhones = env.ADMIN || [];
       await Promise.all(
         adminPhones.map(async (adminPhone) => {
           try {
