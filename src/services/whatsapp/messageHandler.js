@@ -3,12 +3,12 @@ import { logger } from "../../utils/logger.js";
 import { commandHandlers } from "./commands/index.js";
 import { handleMediaExtraction } from "../media/mediaExtractor.js";
 import { generateAIResponse } from "../ai/aiService.js";
+import { ChatHistoryManager } from "../ai/chatHistoryManager.js";
 import { textToSpeech } from "../audio/tts.js";
 import WhatsAppWeb from "whatsapp-web.js";
-import axios from "axios";
-import { env } from "../../config/env.js";
 import { whatsappClient } from "./client.js";
 import removeMarkdown from "remove-markdown";
+
 
 const { MessageMedia } = WhatsAppWeb;
 
@@ -200,10 +200,10 @@ export class MessageHandler {
 
       // Check for bot mentions and add user if not already in the set
       if (!this.usersToRespondTo.has(message.author) && isBotMentioned) {
-	this.usersToRespondTo.add(message.author);
-          await message.reply("Hello! How can I assist you?");
-          return; // Prevent further processing
-}
+        this.usersToRespondTo.add(message.author);
+        await message.reply("Hello! How can I assist you?");
+        return; // Prevent further processing
+      }
       // Generate voice if needed
       try {
         await generateVoiceIfNeeded(message.body, message);
@@ -216,7 +216,7 @@ export class MessageHandler {
       if (shouldRespond) {
         await ChatState.setTyping(chat);
         try {
-          const aiResponse = await this.handleAIResponse(message, chat);
+          await this.handleAIResponse(message, chat);
         } catch (aiError) {
           console.error(`${logContext} Error generating AI response:`, aiError);
           // Don't throw here, just log the error
@@ -267,6 +267,9 @@ export class MessageHandler {
 
     const [command, ...args] = commandParts;
     const commandKey = command.toLowerCase();
+    if (commandKey === 'toggleai') {
+      ChatHistoryManager.clearAllHistories();
+    }
     try {
       const commandDoc = await Commands.findOne({ name: commandKey });
 
@@ -313,8 +316,12 @@ export class MessageHandler {
 
   async handleAIResponse(message, chat) {
     try {
+      // Use the author's ID as the unique identifier
+      const userId = message.author;
+
       const { response, command, terminate } = await generateAIResponse(
         message.body,
+        userId
       );
 
       await message.reply(response);
@@ -323,9 +330,10 @@ export class MessageHandler {
         await this.handleCommand(message, chat, command);
       }
 
-      // Optionally log or handle the `terminate` flag
+      // If terminate is true, clear this user's chat history
       if (terminate) {
         this.usersToRespondTo.delete(message.author);
+        ChatHistoryManager.clearHistory(userId);
       }
     } catch (error) {
       logger.error({ err: error }, "Error generating AI response");

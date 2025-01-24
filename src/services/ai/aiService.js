@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { logger } from "../../utils/logger.js";
 import { env } from "../../config/env.js";
+import { ChatHistoryManager } from "./chatHistoryManager.js";
 
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 
@@ -96,23 +97,29 @@ const responseSchema = {
   required: ["response"],
 };
 
-export async function generateAIResponse(userMessage, chatHistory = []) {
+export async function generateAIResponse(userMessage, userId) {
   try {
+    // Get the user's chat history
+    const chatHistory = ChatHistoryManager.getHistory(userId);
+
     const chatSession = model.startChat({
-      history: chatHistory.map((entry) => ({
-        role: entry.role,
-        parts: entry.text,
-      })),
+      history: chatHistory,
       responseSchema,
     });
 
     const result = await chatSession.sendMessage(
-      `${SYSTEM_PROMPT}\n\nUser: "${userMessage}"`,
+      `${SYSTEM_PROMPT}
+
+User: "${userMessage}"`,
     );
     const responseText = result.response.text().trim();
 
     try {
       const parsedResponse = JSON.parse(responseText);
+
+      // Add user message and AI response to chat history
+      ChatHistoryManager.addToHistory(userId, "user", userMessage);
+      ChatHistoryManager.addToHistory(userId, "model", parsedResponse.response);
 
       return {
         response: parsedResponse.response || "خليك كده متكلمنيش 🙄",

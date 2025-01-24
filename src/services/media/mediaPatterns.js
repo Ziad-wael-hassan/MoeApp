@@ -7,7 +7,4 @@ export const MEDIA_PATTERNS = {
 
   facebook:
     /\bhttps?:\/\/(?:www\.)?facebook\.com\/(?:(?:watch\/\?v=\d+)|(?:[\w.-]+\/videos\/\d+)|(?:reel\/\d+)|(?:share\/r\/[\w-]+\/)|(?:[\w.-]+\/(?:posts|photos)\/[\w.-]+))(?:\?(?:[\w%&=.-]+))?/i,
-
-  YOUTUBE:
-    /\bhttps?:\/\/(?:(?:www\.)?youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\/)([A-Za-z0-9_-]+)(?:\?.*)?/i,
 };

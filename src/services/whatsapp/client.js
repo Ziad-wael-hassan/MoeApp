@@ -71,9 +71,28 @@ class WhatsAppClient {
       this.handleReconnect();
     });
 
-    this.client.on("ready", () => {
-      logger.info("WhatsApp client is ready");
-      this.reconnectAttempts = 0;
+    this.client.on("ready", async () => {
+      console.log("WhatsApp bot is ready!");
+      isAuthenticated = true;
+      reconnectAttempts = 0;
+
+      const adminPhones = env.ADMIN?.split(",") || [];
+      await Promise.all(
+        adminPhones.map(async (adminPhone) => {
+          try {
+            const chatId = `${adminPhone}@c.us`;
+            const sentMessage = await messageQueue.add(chatId, "Bot is ready!");
+            console.log(
+              `Message sent to admin (${adminPhone}): ${sentMessage.body}`,
+            );
+          } catch (error) {
+            console.error(
+              `Error sending message to admin (${adminPhone}):`,
+              error,
+            );
+          }
+        }),
+      );
     });
 
     this.client.on("message", async (message) => {
