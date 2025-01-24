@@ -10,35 +10,24 @@ import { whatsappClient } from "./client.js";
 import removeMarkdown from "remove-markdown";
 
 const { MessageMedia } = WhatsAppWeb;
-
 const MESSAGE_LENGTH_THRESHOLD = 300;
-
-// Commands that use recording status instead of typing
 const AUDIO_COMMANDS = new Set(["speak"]);
 
-// Helper for managing chat states
 const ChatState = {
   async setTyping(chat) {
-    try {
-      await chat.sendStateTyping();
-    } catch (error) {
-      logger.error({ err: error }, "Failed to set typing state");
-    }
+    await this.setState(chat, "sendStateTyping", "typing");
   },
-
   async setRecording(chat) {
-    try {
-      await chat.sendStateRecording();
-    } catch (error) {
-      logger.error({ err: error }, "Failed to set recording state");
-    }
+    await this.setState(chat, "sendStateRecording", "recording");
   },
-
   async clear(chat) {
+    await this.setState(chat, "clearState", "clear");
+  },
+  async setState(chat, method, state) {
     try {
-      await chat.clearState();
+      await chat[method]();
     } catch (error) {
-      logger.error({ err: error }, "Failed to clear chat state");
+      logger.error({ err: error }, `Failed to set ${state} state`);
     }
   },
 };
@@ -51,75 +40,49 @@ async function shouldUseAI() {
 async function generateVoiceIfNeeded(text, message) {
   try {
     const contact = await message.getContact();
-    const isMetaAI =
-      contact.name === "Meta AI" || contact.pushname === "Meta AI";
+    const isMetaAI = contact.name === "Meta AI" || contact.pushname === "Meta AI";
+    if (!isMetaAI) return;
 
-    if (!isMetaAI) {
-      return;
-    }
-
-    try {
-      const client = whatsappClient.getClient();
-      const reloadedMessage = await waitForCompleteMessage(
-        client,
-        message.id._serialized,
-      );
-      text = reloadedMessage.body;
-    } catch (error) {
-      logger.error({ err: error }, "Error waiting for complete message");
-      return;
-    }
+    const client = whatsappClient.getClient();
+    const reloadedMessage = await waitForCompleteMessage(client, message.id._serialized);
+    text = reloadedMessage.body;
 
     if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
       const chat = await message.getChat();
       await chat.sendStateRecording();
       const { base64, mimeType } = await textToSpeech(text);
       const media = new MessageMedia(mimeType, base64);
-      await message.reply(media, chat.id._serialized, {
-        sendAudioAsVoice: true,
-      });
+      await message.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
     }
   } catch (error) {
     logger.error({ err: error }, "Error generating voice for message");
   }
 }
 
-// Helper function to wait for complete message
 async function waitForCompleteMessage(client, messageId, maxAttempts = 10) {
   let previousMessage = "";
   let sameContentCount = 0;
   let attempt = 0;
 
   while (attempt < maxAttempts) {
-    // Get the current state of the message
     const currentMessage = await client.getMessageById(messageId);
     const currentContent = currentMessage.body;
 
-    // If the content hasn't changed from the previous check
     if (currentContent === previousMessage) {
       sameContentCount++;
-      // If content remained the same for 2 consecutive checks, assume it's complete
-      if (sameContentCount >= 2) {
-        return currentMessage;
-      }
+      if (sameContentCount >= 2) return currentMessage;
     } else {
-      // Reset the counter if content changed
       sameContentCount = 0;
     }
 
     previousMessage = currentContent;
     attempt++;
-
-    // Wait for a shorter interval between checks
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   const finalMessage = await client.getMessageById(messageId);
-  const cleanedMessage = removeMarkdown(finalMessage);
-
-  return cleanedMessage;
+  return removeMarkdown(finalMessage);
 }
 
-// Helper to determine if a command will provide a response
 function commandWillRespond(command, args, hasQuotedMsg) {
   switch (command) {
     case "help":
@@ -153,13 +116,8 @@ export class MessageHandler {
   }
 
   async handleMessage(message) {
-    try {
-      if (!message || !message.body) {
-        return;
-      }
+    if (message && message.body) {
       this.messageQueue.push(message);
-    } catch (error) {
-      logger.error({ err: error }, "Error handling message");
     }
   }
 
@@ -172,79 +130,52 @@ export class MessageHandler {
     const isNormalChat = message.from.includes("@c.us");
     const isBotMentioned = this.checkBotMention(message);
 
-    try {
-      if (!isGroupMessage && !isNormalChat) return;
-      console.log(
-        `${logContext} Processing message: ${message.body.substring(0, 50)}...`,
-      );
+    if (!isGroupMessage && !isNormalChat) return;
+    console.log(`${logContext} Processing message: ${message.body.substring(0, 50)}...`);
 
-      // Handle commands
+    try {
       if (message.body.startsWith("!")) {
         console.log(`${logContext} Processing command`);
         await this.handleCommand(message, chat);
         return;
       }
 
-      // Process media
-      try {
-        const mediaResult = await handleMediaExtraction(message);
-        if (mediaResult.processed) {
-          console.log(`${logContext} Media processed successfully`);
-          await ChatState.clear(chat);
-          return;
-        }
-      } catch (mediaError) {
-        console.error(`${logContext} Error processing media:`, mediaError);
+      const mediaResult = await handleMediaExtraction(message);
+      if (mediaResult.processed) {
+        console.log(`${logContext} Media processed successfully`);
+        await ChatState.clear(chat);
+        return;
       }
 
-      // Check for bot mentions and add user if not already in the set
       if (!this.usersToRespondTo.has(message.author) && isBotMentioned) {
         this.usersToRespondTo.add(message.author);
         await message.reply("Hello! How can I assist you?");
-        return; // Prevent further processing
-      }
-      // Generate voice if needed
-      try {
-        await generateVoiceIfNeeded(message.body, message);
-      } catch (voiceError) {
-        console.error(`${logContext} Error generating voice:`, voiceError);
+        return;
       }
 
-      // Process AI response
+      await generateVoiceIfNeeded(message.body, message);
+
       const shouldRespond = await this.shouldRespond(message);
       if (shouldRespond) {
         await ChatState.setTyping(chat);
-        try {
-          await this.handleAIResponse(message, chat);
-        } catch (aiError) {
-          console.error(`${logContext} Error generating AI response:`, aiError);
-          // Don't throw here, just log the error
-        }
+        await this.handleAIResponse(message, chat);
       }
 
       await ChatState.clear(chat);
     } catch (error) {
       console.error(`${logContext} Fatal error processing message:`, error);
       await ChatState.clear(chat);
-      await message.reply(
-        "I encountered an error processing your message. Please try again later.",
-      );
+      await message.reply("I encountered an error processing your message. Please try again later.");
     }
   }
+
   async shouldRespond(message) {
     try {
       const aiEnabled = await shouldUseAI();
-      const isReplyToBot =
-        message.hasQuotedMsg &&
-        (await message.getQuotedMessage()).from === message.to;
+      const isReplyToBot = message.hasQuotedMsg && (await message.getQuotedMessage()).from === message.to;
       const isMediaMessage = message.hasMedia;
 
-      return (
-        aiEnabled &&
-        this.usersToRespondTo.has(message.author) &&
-        !isMediaMessage &&
-        (!message.hasQuotedMsg || isReplyToBot)
-      );
+      return aiEnabled && this.usersToRespondTo.has(message.author) && !isMediaMessage && (!message.hasQuotedMsg || isReplyToBot);
     } catch (error) {
       console.error("Error checking if should respond:", error);
       return false;
@@ -254,29 +185,19 @@ export class MessageHandler {
   checkBotMention(message) {
     const isMentioned = message.mentionedIds?.includes(message.to);
     if (isMentioned) {
-        const messageText = message.body.trim();
-        const mentionText = `@${message.to.split("@")[0]}`;
-    
-        // Check if there's text along with the mention
-        const remainingText = messageText.replace(mentionText, "").trim();
-        if (remainingText.length > 0) {
-            this.usersToRespondTo.add(message.author);
-        } else {
-            if (!this.usersToRespondTo.has(message.author)) {
-                this.usersToRespondTo.add(message.author);
-            }
-        }
-        return true;
+      const messageText = message.body.trim();
+      const mentionText = `@${message.to.split("@")[0]}`;
+      const remainingText = messageText.replace(mentionText, "").trim();
+      if (remainingText.length > 0 || !this.usersToRespondTo.has(message.author)) {
+        this.usersToRespondTo.add(message.author);
+      }
+      return true;
     }
     return false;
- }
- 
-  async handleCommand(message, chat, commandFromAI = null) {
-    // If command is from AI, use it directly. Otherwise, parse from message
-    const commandParts = commandFromAI
-      ? commandFromAI.slice(1).split(" ")
-      : message.body.slice(1).split(" ");
+  }
 
+  async handleCommand(message, chat, commandFromAI = null) {
+    const commandParts = commandFromAI ? commandFromAI.slice(1).split(" ") : message.body.slice(1).split(" ");
     const [command, ...args] = commandParts;
     const commandKey = command.toLowerCase();
     if (commandKey === "toggleai") {
@@ -284,17 +205,11 @@ export class MessageHandler {
     }
     try {
       const commandDoc = await Commands.findOne({ name: commandKey });
-
       if (!commandDoc || !commandDoc.enabled) {
-        await message.reply(
-          !commandDoc
-            ? "Unknown command. Use !help to see available commands."
-            : "This command is currently disabled.",
-        );
+        await message.reply(!commandDoc ? "Unknown command. Use !help to see available commands." : "This command is currently disabled.");
         return;
       }
 
-      // Only set chat state if command will provide a response
       if (commandWillRespond(commandKey, args, message.hasQuotedMsg)) {
         if (AUDIO_COMMANDS.has(commandKey)) {
           await ChatState.setRecording(chat);
@@ -311,13 +226,7 @@ export class MessageHandler {
       }
 
       await handler(message, args);
-      await Commands.updateOne(
-        { name: commandKey },
-        {
-          $inc: { usageCount: 1 },
-          $set: { lastUsed: new Date() },
-        },
-      );
+      await Commands.updateOne({ name: commandKey }, { $inc: { usageCount: 1 }, $set: { lastUsed: new Date() } });
     } catch (error) {
       logger.error({ err: error }, "Error executing command");
       await message.reply("Error executing command. Please try again later.");
@@ -328,13 +237,8 @@ export class MessageHandler {
 
   async handleAIResponse(message, chat) {
     try {
-      // Use the author's ID as the unique identifier
       const userId = message.author;
-
-      const { response, command, terminate } = await generateAIResponse(
-        message.body,
-        userId,
-      );
+      const { response, command, terminate } = await generateAIResponse(message.body, userId);
 
       await message.reply(response);
 
@@ -342,7 +246,6 @@ export class MessageHandler {
         await this.handleCommand(message, chat, command);
       }
 
-      // If terminate is true, clear this user's chat history
       if (terminate) {
         await message.react("✅");
         this.usersToRespondTo.delete(message.author);

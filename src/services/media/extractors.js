@@ -68,7 +68,7 @@ export async function extractTikTokMedia(url) {
     }
 
     if (data.data.images && Array.isArray(data.data.images)) {
-      return data.data.images[0]; // Return first image URL for now
+      return data.data.images; // Return first image URL for now
     }
 
     if (data.data.play) {

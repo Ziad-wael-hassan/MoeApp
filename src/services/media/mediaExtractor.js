@@ -10,11 +10,6 @@ import {
 } from "./extractors.js";
 
 const { MessageMedia } = WhatsAppWeb;
-
-// Cache for recently processed URLs
-const mediaCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const MAX_CACHE_SIZE = 100;
 const PROCESSING_TIMEOUT = 60000; // 60 seconds
 
 // Configure axios instance
@@ -53,21 +48,6 @@ function getMediaType(url) {
     if (pattern.test(url)) return platform.toLowerCase();
   }
   return null;
-}
-
-// Manage cache size
-function manageCache() {
-  if (mediaCache.size > MAX_CACHE_SIZE) {
-    const oldestKey = mediaCache.keys().next().value;
-    mediaCache.delete(oldestKey);
-  }
-
-  const now = Date.now();
-  for (const [key, { timestamp }] of mediaCache.entries()) {
-    if (now - timestamp > CACHE_TTL) {
-      mediaCache.delete(key);
-    }
-  }
 }
 
 // Download media
@@ -125,32 +105,22 @@ async function sendMedia(url, message) {
   if (!url || !message) return false;
 
   try {
-    // Check cache first
-    if (mediaCache.has(url)) {
-      const cached = mediaCache.get(url);
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
-        await message.reply(cached.media);
-        return true;
-      }
-      mediaCache.delete(url);
-    }
-
     const mediaType = getMediaType(url);
     if (!mediaType) return false;
 
     logger.info(`Processing ${mediaType} URL`);
-    const mediaUrl = await extractMediaUrl(url, mediaType);
+    let mediaUrls = await extractMediaUrl(url, mediaType);
 
-    const { base64, mimeType } = await downloadMedia(mediaUrl);
-    const media = new MessageMedia(mimeType, base64);
+    if (!Array.isArray(mediaUrls)) {
+      mediaUrls = [mediaUrls];
+    }
 
-    await message.reply(media);
+    for (const mediaUrl of mediaUrls) {
+      const { base64, mimeType } = await downloadMedia(mediaUrl);
+      const media = new MessageMedia(mimeType, base64);
 
-    mediaCache.set(url, {
-      media,
-      timestamp: Date.now(),
-    });
-    manageCache();
+      await message.reply(media);
+    }
 
     return true;
   } catch (error) {
