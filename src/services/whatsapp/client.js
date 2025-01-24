@@ -72,7 +72,6 @@ class WhatsAppClient {
     });
 
     this.client.on("ready", async () => {
-      console.log("WhatsApp bot is ready!");
       this.isAuthenticated = true;
       this.reconnectAttempts = 0;
 
@@ -82,8 +81,8 @@ class WhatsAppClient {
           try {
             const chatId = `${adminPhone}@c.us`;
             this.client.sendMessage(chatId, "Bot is online and ready!");
-            console.log(
-              `Message sent to admin (${adminPhone}): ${sentMessage.body}`,
+            logger.info(
+              `Message sent to admin (${adminPhone})`,
             );
           } catch (error) {
             console.error(
