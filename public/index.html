@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WhatsApp Demo</title>
+    <title>WhatsApp Pairing Login</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -26,84 +26,47 @@
       }
 
       body {
-        font-family:
-          "Inter",
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
-          Roboto,
-          Helvetica,
-          Arial,
-          sans-serif;
-        background: linear-gradient(
-          135deg,
-          var(--primary) 0%,
-          var(--secondary) 100%
-        );
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
         min-height: 100vh;
-        font-feature-settings: "ss01", "ss02", "cv01", "cv02";
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-feature-settings: 'ss01', 'ss02', 'cv01', 'cv02';
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
 
       .container {
-        max-width: 100%;
-        padding: 1rem;
-        margin: 0 auto;
+        max-width: 400px;
+        width: 100%;
+        padding: 2rem;
       }
 
-      @media (min-width: 640px) {
-        .container {
-          max-width: 540px;
-          padding: 2rem;
-        }
+      .card {
+        background: white;
+        border-radius: 16px;
+        padding: 2rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
       }
 
       .header {
         text-align: center;
-        padding: 2rem 1rem;
-        color: white;
-      }
-
-      .logo {
-        width: 64px;
-        height: 64px;
-        margin: 0 auto 1rem;
-        animation: pulse 2s infinite;
-      }
-
-      @keyframes pulse {
-        0% {
-          transform: scale(1);
-        }
-        50% {
-          transform: scale(1.1);
-        }
-        100% {
-          transform: scale(1);
-        }
+        margin-bottom: 1.5rem;
+        color: var(--text);
       }
 
       .title {
-        font-size: 2rem;
+        font-size: 1.75rem;
         font-weight: 700;
         margin-bottom: 0.5rem;
         letter-spacing: -0.025em;
       }
 
       .subtitle {
-        font-size: 1.125rem;
-        opacity: 0.9;
+        font-size: 1rem;
+        opacity: 0.7;
         font-weight: 500;
-        letter-spacing: -0.01em;
-      }
-
-      .card {
-        background: white;
-        border-radius: 16px;
-        padding: 1.5rem;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-        margin-top: 1rem;
       }
 
       .form-group {
@@ -126,24 +89,13 @@
         border-radius: 8px;
         font-size: 1rem;
         transition: border-color 0.2s;
-        font-family: "Inter", sans-serif;
+        font-family: 'Inter', sans-serif;
         font-weight: 500;
-      }
-
-      .form-input::placeholder {
-        color: #9ca3af;
-        font-weight: 400;
       }
 
       .form-input:focus {
         outline: none;
         border-color: var(--primary);
-      }
-
-      textarea.form-input {
-        min-height: 100px;
-        resize: vertical;
-        line-height: 1.5;
       }
 
       .btn {
@@ -157,7 +109,7 @@
         font-weight: 600;
         cursor: pointer;
         transition: background-color 0.2s;
-        font-family: "Inter", sans-serif;
+        font-family: 'Inter', sans-serif;
         letter-spacing: -0.01em;
       }
 
@@ -165,71 +117,72 @@
         background: var(--primary-dark);
       }
 
-      .btn:active {
-        transform: translateY(1px);
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
 
-      #result {
+      #loginError {
+        color: #d32f2f;
+        text-align: center;
         margin-top: 1rem;
-        padding: 1rem;
+        font-size: 0.875rem;
+      }
+
+      .loading-spinner {
+        display: inline-block;
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+        margin: 0 auto;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      .pairing-code-container {
+        display: flex;
+        align-items: center;
+        margin-top: 1rem;
+      }
+
+      .pairing-code {
+        flex-grow: 1;
+        padding: 0.75rem;
+        background-color: #f0f0f0;
         border-radius: 8px;
-        font-size: 0.9375rem;
-        transition: all 0.3s;
-        font-weight: 500;
+        margin-right: 0.5rem;
+        font-weight: bold;
       }
 
-      #result.success {
-        background: #d1fae5;
-        color: #065f46;
+      .copy-btn {
+        background-color: var(--secondary);
+        width: auto;
+        padding: 0.75rem;
       }
 
-      #result.error {
-        background: #fee2e2;
-        color: #991b1b;
-      }
-
-      @media (max-width: 380px) {
-        .header {
-          padding: 1rem 0.5rem;
-        }
-
-        .card {
-          padding: 1rem;
-        }
-
-        .title {
-          font-size: 1.75rem;
-        }
-
-        .subtitle {
-          font-size: 1rem;
-        }
+      .loading-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <header class="header">
-        <svg
-          class="logo"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
-        <h1 class="title">WhatsApp Demo</h1>
-        <p class="subtitle">Send a message using the WhatsApp API</p>
-      </header>
+      <div class="card">
+        <div class="header">
+          <h1 class="title">WhatsApp Pairing</h1>
+          <p class="subtitle">Generate Pairing Code</p>
+        </div>
 
-      <main class="card">
-        <form id="messageForm">
+        <div id="loginForm">
           <div class="form-group">
             <label for="phone" class="form-label">Phone Number</label>
             <input
@@ -244,17 +197,6 @@
           </div>
 
           <div class="form-group">
-            <label for="message" class="form-label">Message</label>
-            <textarea
-              id="message"
-              name="message"
-              class="form-input"
-              placeholder="Type your message here..."
-              required
-            ></textarea>
-          </div>
-
-          <div class="form-group">
             <label for="apiKey" class="form-label">API Key</label>
             <input
               type="password"
@@ -266,63 +208,105 @@
             />
           </div>
 
-          <button type="submit" class="btn">Send Message</button>
-        </form>
-        <div id="result"></div>
-      </main>
+          <button id="submitBtn" class="btn">Generate Pairing Code</button>
+          <div id="loginError"></div>
+        </div>
+
+        <div id="loadingContainer" style="display:none;" class="loading-container">
+          <div class="loading-spinner"></div>
+        </div>
+
+        <div id="pairingCodeContainer" style="display:none;">
+          <div class="pairing-code-container">
+            <div id="pairingCode" class="pairing-code"></div>
+            <button id="copyBtn" class="btn copy-btn">Copy</button>
+          </div>
+        </div>
+      </div>
     </div>
+
     <script>
-      function parsePhoneNumber(phone) {
-        return phone.replace(/\D/g, "");
-      }
+      const phoneInput = document.getElementById('phone');
+      const apiKeyInput = document.getElementById('apiKey');
+      const submitBtn = document.getElementById('submitBtn');
+      const loginForm = document.getElementById('loginForm');
+      const loadingContainer = document.getElementById('loadingContainer');
+      const pairingCodeContainer = document.getElementById('pairingCodeContainer');
+      const pairingCodeElement = document.getElementById('pairingCode');
+      const copyBtn = document.getElementById('copyBtn');
+      const loginError = document.getElementById('loginError');
 
-      document
-        .getElementById("messageForm")
-        .addEventListener("submit", async (e) => {
-          e.preventDefault();
-          const phoneRaw = document.getElementById("phone").value;
-          const parsedPhone = parsePhoneNumber(phoneRaw);
-          const message = document.getElementById("message").value;
-          const apiKey = document.getElementById("apiKey").value;
-          const resultDiv = document.getElementById("result");
+      submitBtn.addEventListener('click', async () => {
+        const phone = phoneInput.value.replace(/\D/g, '');
+        const apiKey = apiKeyInput.value;
 
-          // Show loading state
-          const btn = e.target.querySelector("button");
-          const originalText = btn.textContent;
-          btn.textContent = "Sending...";
-          btn.disabled = true;
+        // Validate inputs
+        if (!phone || !apiKey) {
+          loginError.textContent = 'Please enter both phone number and API key';
+          return;
+        }
 
-          try {
-            const response = await fetch("/api/message", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-API-Key": apiKey,
-              },
-              body: JSON.stringify({
-                phone: parsedPhone,
-                message,
-              }),
-            });
+        // Hide form and show loading
+        loginForm.style.display = 'none';
+        loadingContainer.style.display = 'flex';
+        loginError.textContent = '';
 
-            const data = await response.json();
+        try {
+          const response = await fetch('/api/auth/pair', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': apiKey
+            },
+            body: JSON.stringify({ phone })
+          });
 
-            if (response.ok) {
-              resultDiv.textContent = `Message sent successfully! Message ID: ${data.messageId}`;
-              resultDiv.className = "success";
-              e.target.reset();
-            } else {
-              resultDiv.textContent = `Error: ${data.error}`;
-              resultDiv.className = "error";
-            }
-          } catch (error) {
-            resultDiv.textContent = `Error: ${error.message}`;
-            resultDiv.className = "error";
-          } finally {
-            btn.textContent = originalText;
-            btn.disabled = false;
+          const data = await response.json();
+
+          // Hide loading
+          loadingContainer.style.display = 'none';
+
+          if (response.ok) {
+            // Show pairing code
+            pairingCodeElement.textContent = data.code;
+            pairingCodeContainer.style.display = 'block';
+          } else {
+            // Show error and restore form
+            loginForm.style.display = 'block';
+            loginError.textContent = data.error || 'Failed to generate pairing code';
           }
-        });
+        } catch (error) {
+          // Hide loading
+          loadingContainer.style.display = 'none';
+          
+          // Restore form and show error
+          loginForm.style.display = 'block';
+          loginError.textContent = `Error: ${error.message}`;
+        }
+      });
+
+      // Copy pairing code functionality
+      copyBtn.addEventListener('click', () => {
+        const pairingCode = pairingCodeElement.textContent;
+        
+        // Create a temporary textarea to copy the text
+        const tempTextArea = document.createElement('textarea');
+        tempTextArea.value = pairingCode;
+        document.body.appendChild(tempTextArea);
+        tempTextArea.select();
+        
+        try {
+          document.execCommand('copy');
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => {
+            copyBtn.textContent = 'Copy';
+          }, 2000);
+        } catch (err) {
+          console.error('Copy failed', err);
+        }
+        
+        document.body.removeChild(tempTextArea);
+      });
     </script>
   </body>
 </html>
