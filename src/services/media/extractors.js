@@ -1,6 +1,6 @@
 import axios from "axios";
 import aesjs from "aes-js";
-import { exec } from "child_process";
+import { spawn } from 'child_process';
 import { logger } from "../../utils/logger.js";
 
 // Instagram video extraction
@@ -140,32 +140,42 @@ export async function extractFacebookMedia(url) {
 }
 
 export async function extractSoundCloudMedia(url) {
-  try {
-    logger.debug("Fetching SoundCloud media for URL:", url);
+  return new Promise((resolve, reject) => {
+    if (!url) {
+      return reject(new Error("Invalid URL"));
+    }
 
-    return new Promise((resolve, reject) => {
-      exec(`yt-dlp -f bestaudio --get-url "${url}"`, (error, stdout, stderr) => {
-        if (error) {
-          logger.error('SoundCloud extraction error:', error);
-          return reject(new Error(`Failed to extract SoundCloud media: ${error.message}`));
-        }
+    const process = spawn("yt-dlp", [
+      "-f", "bestaudio", // Download the best audio format
+      "-o", "-",        // Output directly to stdout
+      "--no-playlist",  // Ignore playlists, download only the provided URL
+      url,
+    ]);
 
-        if (stderr) {
-          logger.warn('SoundCloud extraction warnings:', stderr);
-        }
+    const buffers = [];
+    let errorOutput = "";
 
-        const audioUrl = stdout.trim();
-        
-        if (!audioUrl) {
-          return reject(new Error('No audio URL found for SoundCloud track'));
-        }
-
-        resolve(audioUrl);
-      });
+    // Collect data chunks
+    process.stdout.on("data", (chunk) => buffers.push(chunk));
+    
+    // Capture error output
+    process.stderr.on("data", (chunk) => {
+      errorOutput += chunk.toString();
     });
-  } catch (error) {
-    logger.error('SoundCloud extraction error:', error);
-    throw error;
-  }
-}
 
+    process.on("close", (code) => {
+      if (code === 0) {
+        // Successfully finished, combine all buffers
+        const buffer = Buffer.concat(buffers);
+        resolve({ buffer, mimeType: "audio/mpeg" }); // Default MIME type for MP3
+      } else {
+        // Handle errors
+        reject(new Error(`yt-dlp process exited with code ${code}: ${errorOutput}`));
+      }
+    });
+
+    process.on("error", (err) => {
+      reject(new Error(`Failed to start yt-dlp process: ${err.message}`));
+    });
+  });
+}

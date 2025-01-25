@@ -78,7 +78,7 @@ async function extractMediaUrl(url, mediaType) {
     instagram: extractInstagramMedia,
     tiktok: extractTikTokMedia,
     facebook: extractFacebookMedia,
-    soundcloud: extractSoundCloudMedia,
+    soundcloud: extractSoundCloudMedia, // This extractor returns a buffer.
   };
 
   const extractor = extractors[mediaType];
@@ -89,20 +89,25 @@ async function extractMediaUrl(url, mediaType) {
   try {
     const extractPromise = extractor(url);
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error("Media extraction timed out")),
-        PROCESSING_TIMEOUT,
-      ),
+      setTimeout(() => reject(new Error("Media extraction timed out")), PROCESSING_TIMEOUT)
     );
 
-    return await Promise.race([extractPromise, timeoutPromise]);
+    // Wait for either the extraction or timeout
+    const mediaData = await Promise.race([extractPromise, timeoutPromise]);
+
+    if (mediaData.buffer) {
+      // If the extractor returns a buffer, pass it as-is
+      return mediaData; // { buffer, mimeType }
+    }
+
+    // Otherwise, assume it's a URL
+    return { url: mediaData };
   } catch (error) {
-    logger.error("Media extraction failed");
+    logger.error("Media extraction failed:", error);
     throw error;
   }
 }
 
-// Send media to chat
 async function sendMedia(url, message) {
   if (!url || !message) return false;
 
@@ -111,11 +116,17 @@ async function sendMedia(url, message) {
     if (!mediaType) return false;
 
     logger.info(`Processing ${mediaType} URL`);
-    let mediaUrls = await extractMediaUrl(url, mediaType);
+    const mediaData = await extractMediaUrl(url, mediaType);
 
-    if (!Array.isArray(mediaUrls)) {
-      mediaUrls = [mediaUrls];
+    if (mediaData.buffer) {
+      // If the extractor returned a buffer, use it directly
+      const media = new MessageMedia(mediaData.mimeType, mediaData.buffer.toString("base64"));
+      await message.reply(media);
+      return true;
     }
+
+    // For URL-based media, proceed as usual
+    const mediaUrls = Array.isArray(mediaData.url) ? mediaData.url : [mediaData.url];
 
     for (const mediaUrl of mediaUrls) {
       const { base64, mimeType } = await downloadMedia(mediaUrl);
@@ -126,7 +137,7 @@ async function sendMedia(url, message) {
 
     return true;
   } catch (error) {
-    logger.error("Error in extracting URL");
+    console.error("Error in processing media:", error);
     return false;
   }
 }
