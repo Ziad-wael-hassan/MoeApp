@@ -7,7 +7,8 @@ import {
   extractInstagramMedia,
   extractTikTokMedia,
   extractFacebookMedia,
-} from "./extractors.js";
+  extractSoundCloudMedia
+} from './extractors.js';
 
 const { MessageMedia } = WhatsAppWeb;
 const PROCESSING_TIMEOUT = 60000; // 60 seconds
@@ -77,6 +78,7 @@ async function extractMediaUrl(url, mediaType) {
     instagram: extractInstagramMedia,
     tiktok: extractTikTokMedia,
     facebook: extractFacebookMedia,
+    soundcloud: extractSoundCloudMedia,
   };
 
   const extractor = extractors[mediaType];

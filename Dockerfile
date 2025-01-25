@@ -1,7 +1,7 @@
 # Use a Node.js image with a specific version
 FROM node:20-bullseye
 
-# Install Chrome dependencies
+# Install Chrome dependencies and yt-dlp
 RUN apt-get update \
     && apt-get install -y \
     chromium \
@@ -13,7 +13,11 @@ RUN apt-get update \
     fonts-freefont-ttf \
     libxss1 \
     ffmpeg \
+    python3 \
+    python3-pip \
+    curl \
     --no-install-recommends \
+    && pip3 install --no-cache-dir yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up working directory

@@ -1,5 +1,6 @@
 import axios from "axios";
 import aesjs from "aes-js";
+import { exec } from "child_process";
 import { logger } from "../../utils/logger.js";
 
 // Instagram video extraction
@@ -137,3 +138,34 @@ export async function extractFacebookMedia(url) {
     throw error;
   }
 }
+
+export async function extractSoundCloudMedia(url) {
+  try {
+    logger.debug("Fetching SoundCloud media for URL:", url);
+
+    return new Promise((resolve, reject) => {
+      exec(`yt-dlp -f bestaudio --get-url "${url}"`, (error, stdout, stderr) => {
+        if (error) {
+          logger.error('SoundCloud extraction error:', error);
+          return reject(new Error(`Failed to extract SoundCloud media: ${error.message}`));
+        }
+
+        if (stderr) {
+          logger.warn('SoundCloud extraction warnings:', stderr);
+        }
+
+        const audioUrl = stdout.trim();
+        
+        if (!audioUrl) {
+          return reject(new Error('No audio URL found for SoundCloud track'));
+        }
+
+        resolve(audioUrl);
+      });
+    });
+  } catch (error) {
+    logger.error('SoundCloud extraction error:', error);
+    throw error;
+  }
+}
+
