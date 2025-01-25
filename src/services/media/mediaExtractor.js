@@ -115,14 +115,22 @@ async function sendMedia(url, message) {
     const mediaType = getMediaType(url);
     if (!mediaType) return false;
 
-    logger.info(`Processing ${mediaType} URL`);
+    logger.info(`Processing ${mediaType} URL: ${url}`);
     const mediaData = await extractMediaUrl(url, mediaType);
 
-    if (mediaData.buffer) {
-      // If the extractor returned a buffer, use it directly
-      const media = new MessageMedia(mediaData.mimeType, mediaData.buffer.toString("base64"));
-      await message.reply(media);
-      return true;
+    logger.debug(`Extracted media data: ${JSON.stringify(mediaData)}`);
+
+    if (mediaType === 'soundcloud' && mediaData.buffer) {
+      // Validate buffer before sending
+      if (Buffer.isBuffer(mediaData.buffer) && mediaData.buffer.length > 0) {
+        const base64Buffer = mediaData.buffer.toString("base64");
+        const media = new MessageMedia(mediaData.mimeType, base64Buffer);
+
+        await message.reply(media);
+        return true;
+      } else {
+        throw new Error("Invalid buffer returned from SoundCloud extractor");
+      }
     }
 
     // For URL-based media, proceed as usual
@@ -130,14 +138,15 @@ async function sendMedia(url, message) {
 
     for (const mediaUrl of mediaUrls) {
       const { base64, mimeType } = await downloadMedia(mediaUrl);
-      const media = new MessageMedia(mimeType, base64);
+      logger.debug(`Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`);
 
+      const media = new MessageMedia(mimeType, base64);
       await message.reply(media);
     }
 
     return true;
   } catch (error) {
-    console.error("Error in processing media:", error);
+    logger.error("Error in processing media:", error);
     return false;
   }
 }

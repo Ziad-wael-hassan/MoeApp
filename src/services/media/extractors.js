@@ -2,6 +2,8 @@ import axios from "axios";
 import aesjs from "aes-js";
 import { spawn } from 'child_process';
 import { logger } from "../../utils/logger.js";
+import ffmpeg from 'fluent-ffmpeg';
+import { PassThrough } from 'stream';
 
 // Instagram video extraction
 function encryptData(data) {
@@ -147,8 +149,8 @@ export async function extractSoundCloudMedia(url) {
 
     const process = spawn("yt-dlp", [
       "-f", "bestaudio", // Download the best audio format
-      "-o", "-",        // Output directly to stdout
-      "--no-playlist",  // Ignore playlists, download only the provided URL
+      "-o", "-",         // Output directly to stdout
+      "--no-playlist",   // Ignore playlists, download only the provided URL
       url,
     ]);
 
@@ -167,7 +169,14 @@ export async function extractSoundCloudMedia(url) {
       if (code === 0) {
         // Successfully finished, combine all buffers
         const buffer = Buffer.concat(buffers);
-        resolve({ buffer, mimeType: "audio/mpeg" }); // Default MIME type for MP3
+        logger.debug(`Extracted SoundCloud buffer size: ${buffer.length} bytes`);
+
+        // Convert MPEG buffer to OGG format using ffmpeg with Opus codec
+        convertBufferToOpus(buffer).then((opusBuffer) => {
+          resolve({ buffer: opusBuffer, mimeType: "audio/ogg" });
+        }).catch((err) => {
+          reject(new Error(`FFmpeg conversion error: ${err.message}`));
+        });
       } else {
         // Handle errors
         reject(new Error(`yt-dlp process exited with code ${code}: ${errorOutput}`));
@@ -177,5 +186,25 @@ export async function extractSoundCloudMedia(url) {
     process.on("error", (err) => {
       reject(new Error(`Failed to start yt-dlp process: ${err.message}`));
     });
+  });
+}
+
+function convertBufferToOpus(buffer) {
+  return new Promise((resolve, reject) => {
+    const inputStream = new PassThrough();
+    const outputStream = new PassThrough();
+    const opusBuffers = [];
+
+    inputStream.end(buffer);
+
+    outputStream.on('data', (chunk) => opusBuffers.push(chunk));
+    outputStream.on('end', () => resolve(Buffer.concat(opusBuffers)));
+    outputStream.on('error', reject);
+
+    ffmpeg(inputStream)
+      .audioCodec('libopus')
+      .outputFormat('ogg')
+      .on('error', reject)
+      .pipe(outputStream);
   });
 }
