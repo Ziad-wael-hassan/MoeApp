@@ -151,8 +151,6 @@ export async function extractSoundCloudMedia(url) {
       "-f", "bestaudio[ext=mp3]", // Download the best audio format as MP3
       "-o", "-",         // Output directly to stdout
       "--no-playlist",   // Ignore playlists, download only the provided URL
-      "--write-thumbnail", // Write thumbnail image to file
-      "--embed-thumbnail", // Embed the thumbnail in the audio file
       "--add-metadata", // Add metadata to the audio file
       url,
     ]);
