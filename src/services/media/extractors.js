@@ -1,9 +1,7 @@
 import axios from "axios";
 import aesjs from "aes-js";
-import { spawn } from 'child_process';
+import { spawn } from "child_process";
 import { logger } from "../../utils/logger.js";
-import ffmpeg from 'fluent-ffmpeg';
-import { PassThrough } from 'stream';
 
 // Instagram video extraction
 function encryptData(data) {
@@ -148,9 +146,11 @@ export async function extractSoundCloudMedia(url) {
     }
 
     const process = spawn("yt-dlp", [
-      "-f", "bestaudio[ext=mp3]", // Download the best audio format as MP3
-      "-o", "-",         // Output directly to stdout
-      "--no-playlist",   // Ignore playlists, download only the provided URL
+      "-f",
+      "bestaudio[ext=mp3]", // Download the best audio format as MP3
+      "-o",
+      "-", // Output directly to stdout
+      "--no-playlist", // Ignore playlists, download only the provided URL
       "--add-metadata", // Add metadata to the audio file
       url,
     ]);
@@ -160,7 +160,7 @@ export async function extractSoundCloudMedia(url) {
 
     // Collect data chunks
     process.stdout.on("data", (chunk) => buffers.push(chunk));
-    
+
     // Capture error output
     process.stderr.on("data", (chunk) => {
       errorOutput += chunk.toString();
@@ -170,37 +170,21 @@ export async function extractSoundCloudMedia(url) {
       if (code === 0) {
         // Successfully finished, combine all buffers
         const buffer = Buffer.concat(buffers);
-        logger.debug(`Extracted SoundCloud buffer size: ${buffer.length} bytes`);
+        logger.debug(
+          `Extracted SoundCloud buffer size: ${buffer.length} bytes`,
+        );
 
         resolve({ buffer, mimeType: "audio/mp3" });
       } else {
         // Handle errors
-        reject(new Error(`yt-dlp process exited with code ${code}: ${errorOutput}`));
+        reject(
+          new Error(`yt-dlp process exited with code ${code}: ${errorOutput}`),
+        );
       }
     });
 
     process.on("error", (err) => {
       reject(new Error(`Failed to start yt-dlp process: ${err.message}`));
     });
-  });
-}
-
-function convertBufferToOpus(buffer) {
-  return new Promise((resolve, reject) => {
-    const inputStream = new PassThrough();
-    const outputStream = new PassThrough();
-    const opusBuffers = [];
-
-    inputStream.end(buffer);
-
-    outputStream.on('data', (chunk) => opusBuffers.push(chunk));
-    outputStream.on('end', () => resolve(Buffer.concat(opusBuffers)));
-    outputStream.on('error', reject);
-
-    ffmpeg(inputStream)
-      .audioCodec('libopus')
-      .outputFormat('ogg')
-      .on('error', reject)
-      .pipe(outputStream);
   });
 }

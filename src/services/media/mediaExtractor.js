@@ -7,8 +7,8 @@ import {
   extractInstagramMedia,
   extractTikTokMedia,
   extractFacebookMedia,
-  extractSoundCloudMedia
-} from './extractors.js';
+  extractSoundCloudMedia,
+} from "./extractors.js";
 
 const { MessageMedia } = WhatsAppWeb;
 const PROCESSING_TIMEOUT = 60000; // 60 seconds
@@ -89,7 +89,10 @@ async function extractMediaUrl(url, mediaType) {
   try {
     const extractPromise = extractor(url);
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Media extraction timed out")), PROCESSING_TIMEOUT)
+      setTimeout(
+        () => reject(new Error("Media extraction timed out")),
+        PROCESSING_TIMEOUT,
+      ),
     );
 
     // Wait for either the extraction or timeout
@@ -120,7 +123,7 @@ async function sendMedia(url, message) {
 
     logger.debug(`Extracted media data: ${JSON.stringify(mediaData)}`);
 
-    if (mediaType === 'soundcloud' && mediaData.buffer) {
+    if (mediaType === "soundcloud" && mediaData.buffer) {
       // Validate buffer before sending
       if (Buffer.isBuffer(mediaData.buffer) && mediaData.buffer.length > 0) {
         const base64Buffer = mediaData.buffer.toString("base64");
@@ -134,11 +137,15 @@ async function sendMedia(url, message) {
     }
 
     // For URL-based media, proceed as usual
-    const mediaUrls = Array.isArray(mediaData.url) ? mediaData.url : [mediaData.url];
+    const mediaUrls = Array.isArray(mediaData.url)
+      ? mediaData.url
+      : [mediaData.url];
 
     for (const mediaUrl of mediaUrls) {
       const { base64, mimeType } = await downloadMedia(mediaUrl);
-      logger.debug(`Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`);
+      logger.debug(
+        `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
+      );
 
       const media = new MessageMedia(mimeType, base64);
       await message.reply(media);
