@@ -148,9 +148,12 @@ export async function extractSoundCloudMedia(url) {
     }
 
     const process = spawn("yt-dlp", [
-      "-f", "bestaudio", // Download the best audio format
+      "-f", "bestaudio[ext=mp3]", // Download the best audio format as MP3
       "-o", "-",         // Output directly to stdout
       "--no-playlist",   // Ignore playlists, download only the provided URL
+      "--write-thumbnail", // Write thumbnail image to file
+      "--embed-thumbnail", // Embed the thumbnail in the audio file
+      "--add-metadata", // Add metadata to the audio file
       url,
     ]);
 
@@ -171,12 +174,7 @@ export async function extractSoundCloudMedia(url) {
         const buffer = Buffer.concat(buffers);
         logger.debug(`Extracted SoundCloud buffer size: ${buffer.length} bytes`);
 
-        // Convert MPEG buffer to OGG format using ffmpeg with Opus codec
-        convertBufferToOpus(buffer).then((opusBuffer) => {
-          resolve({ buffer: opusBuffer, mimeType: "audio/ogg" });
-        }).catch((err) => {
-          reject(new Error(`FFmpeg conversion error: ${err.message}`));
-        });
+        resolve({ buffer, mimeType: "audio/mp3" });
       } else {
         // Handle errors
         reject(new Error(`yt-dlp process exited with code ${code}: ${errorOutput}`));
