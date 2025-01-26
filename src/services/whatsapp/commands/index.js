@@ -2,6 +2,7 @@ import { textToSpeech } from "../../audio/tts.js";
 import { Commands, Settings } from "../../../config/database.js";
 import { logger } from "../../../utils/logger.js";
 import gis from "async-g-i-s";
+import axios from "axios";
 import WhatsAppWeb from "whatsapp-web.js";
 import { scheduleReminder } from "../../../utils/scheduler.js";
 
@@ -186,13 +187,142 @@ export const commandHandlers = {
   },
 
   async img(message, args) {
-    if (args.length === 0) {
-      await message.reply("Please provide a search query.");
-      return;
-    }
+    // Cache management
+    const sentImages = new Map();
+    const MAX_CACHE_SIZE = 1000;
+    const MAX_RETRIES = 3;
 
+    // Helper function to extract image count
+    const extractImageCount = (message) => {
+      const cleanMessage = message.replace(/^!image\s+/, "").trim();
+      const match = cleanMessage.match(/\[(\d+)\]/);
+
+      if (match) {
+        const count = Math.min(Math.max(1, parseInt(match[1])), 10);
+        const query = cleanMessage.replace(/\[\d+\]/, "").trim();
+        return { count, query };
+      }
+
+      return { count: 1, query: cleanMessage };
+    };
+
+    // Helper function to validate image URL
+    const isValidImageUrl = async (url, retryCount = 0) => {
+      try {
+        const response = await axios.head(url, {
+          timeout: 5000,
+          validateStatus: (status) => status === 200,
+        });
+
+        return response.headers["content-type"]?.startsWith("image/");
+      } catch (error) {
+        if (retryCount < MAX_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          return isValidImageUrl(url, retryCount + 1);
+        }
+        return false;
+      }
+    };
+
+    // Helper function to get unique images
+    const getUniqueImages = async (query, count, results) => {
+      const currentTime = Date.now();
+      const sentImagesData = sentImages.get(query) || {
+        urls: new Set(),
+        timestamp: currentTime,
+      };
+
+      const uniqueImages = [];
+      const seenUrls = new Set();
+
+      for (const result of results) {
+        if (uniqueImages.length >= count) break;
+
+        if (seenUrls.has(result.url) || sentImagesData.urls.has(result.url)) {
+          continue;
+        }
+
+        seenUrls.add(result.url);
+
+        try {
+          const isValid = await isValidImageUrl(result.url);
+          if (isValid) {
+            uniqueImages.push(result);
+            sentImagesData.urls.add(result.url);
+          }
+        } catch (error) {
+          console.error(
+            `Error validating image URL ${result.url}:`,
+            error.message,
+          );
+          continue;
+        }
+      }
+
+      // Manage cache size
+      if (sentImages.size > MAX_CACHE_SIZE) {
+        const entries = Array.from(sentImages.entries());
+        entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+        sentImages = new Map(entries.slice(0, MAX_CACHE_SIZE / 2));
+      }
+
+      sentImagesData.timestamp = currentTime;
+      sentImages.set(query, sentImagesData);
+
+      return uniqueImages;
+    };
+
+    // Helper function to fetch and prepare images
+    const fetchAndPrepareImages = async (images) => {
+      return Promise.all(
+        images.map(async (image) => {
+          let retryCount = 0;
+          while (retryCount < MAX_RETRIES) {
+            try {
+              const response = await axios.get(image.url, {
+                responseType: "arraybuffer",
+                timeout: 10000,
+                maxContentLength: 5 * 1024 * 1024, // 5MB max size
+              });
+
+              const contentType = response.headers["content-type"];
+              if (!contentType?.startsWith("image/")) {
+                throw new Error("Invalid content type: " + contentType);
+              }
+
+              return new MessageMedia(
+                contentType,
+                Buffer.from(response.data).toString("base64"),
+                `image.${contentType.split("/")[1]}`,
+              );
+            } catch (error) {
+              retryCount++;
+              if (retryCount >= MAX_RETRIES) {
+                console.error(
+                  `Failed to fetch image after ${MAX_RETRIES} attempts:`,
+                  error.message,
+                );
+                throw error;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+          }
+        }),
+      );
+    };
+
+    // Main image search and send logic
     try {
-      const query = args.join(" ");
+      // Check if a query is provided
+      if (args.length === 0) {
+        await message.reply("Please provide a search query.");
+        return;
+      }
+
+      // Extract query and image count
+      const { count, query } = extractImageCount(args.join(" "));
+
+      // Perform Google Image Search
       const results = await gis(query);
 
       if (!results || results.length === 0) {
@@ -200,14 +330,24 @@ export const commandHandlers = {
         return;
       }
 
-      // Try up to 3 images in case some fail
-      for (let i = 0; i < Math.min(3, results.length); i++) {
+      // Get unique images
+      const uniqueImages = await getUniqueImages(query, count, results);
+
+      if (uniqueImages.length === 0) {
+        await message.reply("No unique images found.");
+        return;
+      }
+
+      // Fetch and prepare images
+      const mediaImages = await fetchAndPrepareImages(uniqueImages);
+
+      // Send images
+      for (const media of mediaImages) {
         try {
-          const media = await MessageMedia.fromUrl(results[i].url);
           await message.reply(media);
-          break;
-        } catch (error) {
-          logger.error({ err: error }, "Error fetching image:");
+        } catch (sendError) {
+          logger.error({ err: sendError }, "Error sending image:");
+          // Continue to next image if one fails
         }
       }
     } catch (error) {
