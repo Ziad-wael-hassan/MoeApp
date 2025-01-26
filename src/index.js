@@ -11,17 +11,13 @@ import dotenv from "dotenv";
 import { reloadScheduledReminders } from "./utils/scheduler.js";
 
 dotenv.config();
-
-// Create Express app
 const app = express();
 
-// Security and performance middleware
 app.use(helmet());
 app.use(compression());
 app.use(express.json({ limit: "10kb" }));
 app.use(express.static("public", { maxAge: "1d" }));
 
-// Rate limiting
 const apiLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   max: env.RATE_LIMIT_MAX_REQUESTS,
@@ -35,7 +31,6 @@ const apiLimiter = rateLimit({
   },
 });
 
-// API key validation middleware
 const validateApiKey = (req, res, next) => {
   const apiKey = req.headers["x-api-key"];
   if (!apiKey || apiKey !== env.API_KEY) {
@@ -46,12 +41,10 @@ const validateApiKey = (req, res, next) => {
 
 app.use(apiLimiter);
 
-// Routes
 app.get("/", (req, res) => {
   res.sendFile(`${process.cwd()}/public/index.html`);
 });
 
-// WhatsApp pairing endpoint
 app.post("/api/auth/pair", [validateApiKey, apiLimiter], async (req, res) => {
   const { phone } = req.body;
   if (!phone) {
@@ -78,7 +71,6 @@ app.post("/api/auth/pair", [validateApiKey, apiLimiter], async (req, res) => {
   }
 });
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   logger.error("Express error:", err);
   res.status(500).json({ error: "Internal server error" });
@@ -87,29 +79,16 @@ app.use((err, req, res, next) => {
 // Initialize services
 async function initialize() {
   try {
-    logger.info("Connecting to MongoDB...");
     await connectDB();
-    logger.info("Connected to MongoDB");
-
-    logger.info("Initializing WhatsApp client...");
     await whatsappClient.initialize();
-    logger.info("WhatsApp client initialized");
+    logger.debug("WhatsApp client initialized");
 
     messageHandler.setClient(whatsappClient.getClient());
-    logger.info("Message handler client set");
-
-    // Start message handler
     messageHandler.start();
-    logger.info("Message handler started");
 
-    // Reload scheduled reminders
-    logger.info("Reloading scheduled reminders...");
     await reloadScheduledReminders();
-    logger.info("Scheduled reminders reloaded");
-
-    // Start Express server
     app.listen(env.PORT, () => {
-      logger.info(`Server is running on port ${env.PORT}`);
+      logger.debug(`Server is running on port ${env.PORT}`);
     });
   } catch (error) {
     logger.error("Initialization error:", error);
@@ -117,18 +96,14 @@ async function initialize() {
   }
 }
 
-// Graceful shutdown
 async function shutdown(signal) {
-  logger.info(`${signal} received. Starting graceful shutdown...`);
+  logger.debug(`${signal} received. Starting graceful shutdown...`);
 
   try {
-    // Close WhatsApp client
     await whatsappClient.shutdown();
-
-    // Close MongoDB connection
     await closeDB();
 
-    logger.info("Graceful shutdown completed");
+    logger.debug("Graceful shutdown completed");
     process.exit(0);
   } catch (error) {
     logger.error("Error during shutdown:", error);
@@ -136,9 +111,7 @@ async function shutdown(signal) {
   }
 }
 
-// Handle shutdown signals
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-// Start the application
 initialize();

@@ -1,5 +1,6 @@
 import { Commands, Settings } from "../../config/database.js";
 import { logger } from "../../utils/logger.js";
+import chalk from "chalk";
 import { commandHandlers } from "./commands/index.js";
 import { handleMediaExtraction } from "../media/mediaExtractor.js";
 import { generateAIResponse } from "../ai/aiService.js";
@@ -129,28 +130,40 @@ export class MessageHandler {
 
   async processMessage(message) {
     const chat = await message.getChat();
+    const contact = await message.getContact();
     const chatId = typeof chat.id === "object" ? chat.id._serialized : chat.id;
-    const authorId = message.author ? message.author.split("@")[0] : "unknown";
-    const logContext = `[Chat: ${chatId} | Author: ${authorId}]`;
+    const authorId =
+      contact.pushname ||
+      contact.name ||
+      message.author.split("@")[0] ||
+      "unknown";
+
+    const logContext = [
+      chatId ? `[Chat: ${chatId}]` : null,
+      authorId ? `[Author: ${authorId}]` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     const isGroupMessage = message.from.includes("@g.us");
     const isNormalChat = message.from.includes("@c.us");
     const isBotMentioned = this.checkBotMention(message);
 
     if (!isGroupMessage && !isNormalChat) return;
-    console.log(
-      `${logContext} Processing message: ${message.body.substring(0, 50)}...`,
+
+    logger.info(
+      `${logContext} Processing message: "${message.body.substring(0, 50)}"`,
     );
 
     try {
       if (message.body.startsWith("!")) {
-        console.log(`${logContext} Processing command`);
+        logger.info(`${logContext} Processing command`);
         await this.handleCommand(message, chat);
         return;
       }
 
       const mediaResult = await handleMediaExtraction(message);
       if (mediaResult.processed) {
-        console.log(`${logContext} Media processed successfully`);
         await ChatState.clear(chat);
         return;
       }
@@ -171,7 +184,7 @@ export class MessageHandler {
 
       await ChatState.clear(chat);
     } catch (error) {
-      console.error(`${logContext} Fatal error processing message:`, error);
+      logger.error(`${logContext} Fatal error processing message:`, error);
       await ChatState.clear(chat);
       await message.reply(
         "I encountered an error processing your message. Please try again later.",
@@ -194,7 +207,7 @@ export class MessageHandler {
         (!message.hasQuotedMsg || isReplyToBot)
       );
     } catch (error) {
-      console.error("Error checking if should respond:", error);
+      logger.error("Error checking if should respond:", error);
       return false;
     }
   }

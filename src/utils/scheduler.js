@@ -59,10 +59,7 @@ export async function scheduleReminder(targetNumber, time) {
 
 export async function reloadScheduledReminders() {
   try {
-    logger.info("Fetching scheduled reminders from the database...");
     const reminders = await Settings.find({ key: { $regex: /^reminder_/ } });
-    logger.info(`Found ${reminders.length} scheduled reminders`);
-
     for (const reminder of reminders) {
       const { targetNumber, reminderTime } = reminder.value;
       const reminderDate = new Date(reminderTime);
