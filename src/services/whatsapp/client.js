@@ -200,6 +200,16 @@ class WhatsAppClient {
         usage: "!msg <@mention or number> <message>",
       },
       {
+        name: "dl",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "utility",
+        description:
+          "Downloads a file from the provided URL and sends it back to the user",
+        usage: "!dl <URL>",
+      },
+      {
         name: "remind",
         enabled: true,
         adminOnly: false,

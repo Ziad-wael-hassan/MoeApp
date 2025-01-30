@@ -356,6 +356,33 @@ export const commandHandlers = {
     }
   },
 
+  async dl(message, args) {
+    if (args.length === 0) {
+      await message.reply("Please provide a URL to download.");
+      return;
+    }
+
+    const url = args[0];
+    const chat = await message.getChat();
+
+    try {
+      await chat.sendStateTyping();
+
+      const media = await MessageMedia.fromUrl(url);
+      if (!media) {
+        await message.reply("Failed to download the file.");
+        return;
+      }
+
+      await chat.clearState();
+      await message.reply(media);
+    } catch (error) {
+      logger.error({ err: error }, "Error in dl command:");
+      await chat.clearState();
+      await message.reply("Failed to download and send the file.");
+    }
+  },
+
   async msg(message, args) {
     if (!(await isAdmin(message))) {
       await message.reply("This command is for admins only.");
