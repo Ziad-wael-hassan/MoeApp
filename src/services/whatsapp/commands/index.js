@@ -2,6 +2,7 @@ import { textToSpeech } from "../../audio/tts.js";
 import { Commands, Settings } from "../../../config/database.js";
 import { logger } from "../../../utils/logger.js";
 import gis from "async-g-i-s";
+import https from "https";
 import axios from "axios";
 import WhatsAppWeb from "whatsapp-web.js";
 import { scheduleReminder } from "../../../utils/scheduler.js";
@@ -15,6 +16,45 @@ async function isAdmin(message) {
   const contactNumber = contact?.number || "";
 
   return adminNumbers.includes(contactNumber);
+}
+
+async function fetchFile(url) {
+  try {
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+      maxRedirects: 5,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+    });
+
+    const contentType =
+      response.headers["content-type"] || "application/octet-stream";
+    const buffer = Buffer.from(response.data);
+    const contentDisposition = response.headers["content-disposition"];
+    let fileName = url.split("/").pop();
+
+    if (contentDisposition && contentDisposition.includes("filename=")) {
+      const matches = contentDisposition.match(/filename="(.+)"/);
+      if (matches && matches[1]) {
+        fileName = matches[1];
+      }
+    }
+
+    if (contentType.startsWith("text/html")) {
+      throw new Error("HTML content is not allowed");
+    }
+
+    return {
+      base64: buffer.toString("base64"),
+      mimeType: contentType,
+      fileName,
+    };
+  } catch (error) {
+    throw new Error(`Failed to fetch file: ${error.message}`);
+  }
 }
 
 export const commandHandlers = {
@@ -368,18 +408,17 @@ export const commandHandlers = {
     try {
       await chat.sendStateTyping();
 
-      const media = await MessageMedia.fromUrl(url);
-      if (!media) {
-        await message.reply("Failed to download the file.");
-        return;
-      }
+      const { base64, mimeType, fileName } = await fetchFile(url);
+      const media = new MessageMedia(mimeType, base64, fileName);
 
       await chat.clearState();
       await message.reply(media);
     } catch (error) {
       logger.error({ err: error }, "Error in dl command:");
       await chat.clearState();
-      await message.reply("Failed to download and send the file.");
+      await message.reply(
+        `Failed to download and send the file: ${error.message}`,
+      );
     }
   },
 
