@@ -411,8 +411,8 @@ export const commandHandlers = {
       const { base64, mimeType, fileName } = await fetchFile(url);
       const media = new MessageMedia(mimeType, base64, fileName);
 
-      await chat.clearState();
       await message.reply(media);
+      await chat.clearState();
     } catch (error) {
       logger.error({ err: error }, "Error in dl command:");
       await chat.clearState();
