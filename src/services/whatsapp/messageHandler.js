@@ -155,6 +155,13 @@ export class MessageHandler {
       `${logContext} Processing message: "${message.body.substring(0, 50)}"`,
     );
 
+    const shutupUser = await ShutupUsers.findOne({
+      phoneNumber: contact.number,
+    });
+    if (shutupUser) {
+      await message.reply(`اسكت يا ${shutupUser.name}`);
+    }
+
     try {
       if (message.body.startsWith("!")) {
         logger.info(`${logContext} Processing command`);

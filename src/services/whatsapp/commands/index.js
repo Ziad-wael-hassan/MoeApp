@@ -1,5 +1,5 @@
 import { textToSpeech } from "../../audio/tts.js";
-import { Commands, Settings } from "../../../config/database.js";
+import { ShutupUsers, Commands, Settings } from "../../../config/database.js";
 import { logger } from "../../../utils/logger.js";
 import gis from "async-g-i-s";
 import https from "https";
@@ -456,6 +456,50 @@ export const commandHandlers = {
       logger.error({ err: error }, "Error in msg command:");
       await message.reply("Failed to send message.");
     }
+  },
+
+  async shutup(message, args) {
+    if (!(await isAdmin(message))) {
+      await message.reply("This command is for admins only.");
+      return;
+    }
+
+    if (args.length < 2) {
+      await message.reply(
+        'Usage: !shutup <mention or phone number> "<name of the person>"',
+      );
+      return;
+    }
+
+    let targetContact;
+    const name = args.slice(1).join(" ").replace(/"/g, "");
+    const number = args[0].replace(/[^0-9]/g, "");
+
+    if (message.mentionedIds.length > 0) {
+      targetContact = await message.client.getContactById(
+        `${message.mentionedIds[0]}@c.us`,
+      );
+    } else if (number.length > 0) {
+      targetContact = await message.client.getContactById(`${number}@c.us`);
+    } else {
+      await message.reply("Please mention a user or provide their number.");
+      return;
+    }
+
+    const phoneNumber = targetContact.number;
+
+    // Add the user to the shutup list
+    await ShutupUsers.upsert(
+      { phoneNumber },
+      {
+        $set: {
+          name,
+          addedAt: new Date(),
+        },
+      },
+    );
+
+    await message.reply(`Added ${name} (${phoneNumber}) to the shutup list.`);
   },
 
   async remind(message, args) {

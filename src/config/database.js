@@ -42,6 +42,15 @@ const MediaProcessing = papr.model(
   }),
 );
 
+const ShutupUsers = papr.model(
+  "shutup_users",
+  schema({
+    phoneNumber: types.string({ required: true }),
+    name: types.string({ required: true }),
+    addedAt: types.date({ required: true }),
+  }),
+);
+
 let client = null;
 
 export async function connectDB() {
@@ -62,4 +71,4 @@ export async function closeDB() {
   }
 }
 
-export { Commands, Settings, MediaProcessing };
+export { Commands, Settings, MediaProcessing, ShutupUsers };

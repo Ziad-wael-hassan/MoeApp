@@ -219,6 +219,16 @@ class WhatsAppClient {
           "Schedules a reminder for a specified user through the bot",
         usage: "!remind <time in 24-hour format> [number/mention]",
       },
+      {
+        name: "shutup",
+        enabled: true,
+        adminOnly: true,
+        usageCount: 0,
+        category: "admin",
+        description:
+          "Adds a user to the shutup list and replies to their messages with 'shut up <name>'",
+        usage: '!shutup <mention or phone number> "<name of the person>"',
+      },
     ];
 
     const insertPromises = defaultCommands.map((command) =>
