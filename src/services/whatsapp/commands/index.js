@@ -62,11 +62,7 @@ async function addShutupUser(message, args) {
   const name = args.slice(1).join(" ").replace(/"/g, "");
   const number = args[0].replace(/[^0-9]/g, "");
 
-  if (message.mentionedIds.length > 0) {
-    targetContact = await message.client.getContactById(
-      `${message.mentionedIds[0]}@c.us`,
-    );
-  } else if (number.length > 0) {
+  if (number.length > 0) {
     targetContact = await message.client.getContactById(`${number}@c.us`);
   } else {
     await message.reply("Please mention a user or provide their number.");
@@ -93,11 +89,7 @@ async function removeShutupUser(message, args) {
   let targetContact;
   const number = args[0].replace(/[^0-9]/g, "");
 
-  if (message.mentionedIds.length > 0) {
-    targetContact = await message.client.getContactById(
-      `${message.mentionedIds[0]}@c.us`,
-    );
-  } else if (number.length > 0) {
+  if (number.length > 0) {
     targetContact = await message.client.getContactById(`${number}@c.us`);
   } else {
     await message.reply("Please mention a user or provide their number.");

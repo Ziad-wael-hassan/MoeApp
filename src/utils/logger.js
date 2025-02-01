@@ -22,11 +22,19 @@ const logger = {
   warn: (message, ...args) =>
     console.warn(chalk.yellow(`[WARN]: ${message}`), ...args),
   error: async (message, ...args) => {
-    const errorMessage = chalk.red(`[ERROR]: ${message}`);
-    console.error(errorMessage, ...args);
+    const errorMessage = `[ERROR]: ${message}`;
+    console.error(chalk.red(errorMessage), ...args);
 
-    // Format the error message and arguments to send to admins
-    const adminMessage = `${errorMessage}\n${args.map((arg) => (typeof arg === "object" ? JSON.stringify(arg, null, 2) : arg)).join("\n")}`;
+    // Format the error message and arguments to send to admins using JSON.stringify
+    const adminMessage = JSON.stringify(
+      {
+        error: errorMessage,
+        details: args,
+      },
+      null,
+      2,
+    );
+
     await sendMessageToAdmins(adminMessage);
   },
 };
