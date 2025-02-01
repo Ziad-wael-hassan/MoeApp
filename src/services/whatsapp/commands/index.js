@@ -57,6 +57,69 @@ async function fetchFile(url) {
   }
 }
 
+async function addShutupUser(message, args) {
+  let targetContact;
+  const name = args.slice(1).join(" ").replace(/"/g, "");
+  const number = args[0].replace(/[^0-9]/g, "");
+
+  if (message.mentionedIds.length > 0) {
+    targetContact = await message.client.getContactById(
+      `${message.mentionedIds[0]}@c.us`,
+    );
+  } else if (number.length > 0) {
+    targetContact = await message.client.getContactById(`${number}@c.us`);
+  } else {
+    await message.reply("Please mention a user or provide their number.");
+    return;
+  }
+
+  const phoneNumber = targetContact.number;
+
+  // Add the user to the shutup list
+  await ShutupUsers.upsert(
+    { phoneNumber },
+    {
+      $set: {
+        name,
+        addedAt: new Date(),
+      },
+    },
+  );
+
+  await message.reply(`Added ${name} (${phoneNumber}) to the shutup list.`);
+}
+
+async function removeShutupUser(message, args) {
+  let targetContact;
+  const number = args[0].replace(/[^0-9]/g, "");
+
+  if (message.mentionedIds.length > 0) {
+    targetContact = await message.client.getContactById(
+      `${message.mentionedIds[0]}@c.us`,
+    );
+  } else if (number.length > 0) {
+    targetContact = await message.client.getContactById(`${number}@c.us`);
+  } else {
+    await message.reply("Please mention a user or provide their number.");
+    return;
+  }
+
+  const phoneNumber = targetContact.number;
+
+  // Remove the user from the shutup list
+  const result = await ShutupUsers.deleteOne({ phoneNumber });
+
+  if (result.deletedCount > 0) {
+    await message.reply(
+      `Removed user with phone number ${phoneNumber} from the shutup list.`,
+    );
+  } else {
+    await message.reply(
+      `User with phone number ${phoneNumber} is not in the shutup list.`,
+    );
+  }
+}
+
 export const commandHandlers = {
   async help(message) {
     const commands = await Commands.find({ enabled: true });
@@ -457,7 +520,6 @@ export const commandHandlers = {
       await message.reply("Failed to send message.");
     }
   },
-
   async shutup(message, args) {
     if (!(await isAdmin(message))) {
       await message.reply("This command is for admins only.");
@@ -466,40 +528,19 @@ export const commandHandlers = {
 
     if (args.length < 2) {
       await message.reply(
-        'Usage: !shutup <mention or phone number> "<name of the person>"',
+        'Usage: !shutup <mention or phone number> "<name of the person>"\n' +
+          "or !shutup remove <mention or phone number>",
       );
       return;
     }
 
-    let targetContact;
-    const name = args.slice(1).join(" ").replace(/"/g, "");
-    const number = args[0].replace(/[^0-9]/g, "");
+    const action = args[0].toLowerCase();
 
-    if (message.mentionedIds.length > 0) {
-      targetContact = await message.client.getContactById(
-        `${message.mentionedIds[0]}@c.us`,
-      );
-    } else if (number.length > 0) {
-      targetContact = await message.client.getContactById(`${number}@c.us`);
+    if (action === "remove") {
+      await removeShutupUser(message, args.slice(1));
     } else {
-      await message.reply("Please mention a user or provide their number.");
-      return;
+      await addShutupUser(message, args);
     }
-
-    const phoneNumber = targetContact.number;
-
-    // Add the user to the shutup list
-    await ShutupUsers.upsert(
-      { phoneNumber },
-      {
-        $set: {
-          name,
-          addedAt: new Date(),
-        },
-      },
-    );
-
-    await message.reply(`Added ${name} (${phoneNumber}) to the shutup list.`);
   },
 
   async remind(message, args) {

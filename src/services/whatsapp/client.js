@@ -226,8 +226,9 @@ class WhatsAppClient {
         usageCount: 0,
         category: "admin",
         description:
-          "Adds a user to the shutup list and replies to their messages with 'shut up <name>'",
-        usage: '!shutup <mention or phone number> "<name of the person>"',
+          "Adds a user to the shutup list and replies to their messages with 'shut up <name>' or removes them from the list",
+        usage:
+          '!shutup <mention or phone number> "<name of the person>"\n!shutup remove <mention or phone number>',
       },
     ];
 

@@ -1,4 +1,4 @@
-import { Commands, Settings } from "../../config/database.js";
+import { ShutupUser, Commands, Settings } from "../../config/database.js";
 import { logger } from "../../utils/logger.js";
 import chalk from "chalk";
 import { commandHandlers } from "./commands/index.js";
