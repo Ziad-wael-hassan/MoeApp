@@ -1,3 +1,4 @@
+// messageHandler.js
 import { ShutupUsers, Commands, Settings } from "../../config/database.js";
 import { logger } from "../../utils/logger.js";
 import chalk from "chalk";
@@ -13,6 +14,9 @@ import removeMarkdown from "remove-markdown";
 const { MessageMedia } = WhatsAppWeb;
 const MESSAGE_LENGTH_THRESHOLD = 300;
 const AUDIO_COMMANDS = new Set(["speak"]);
+
+// Cooldown period in milliseconds (1 minute)
+const SHUTUP_COOLDOWN = 60000;
 
 const ChatState = {
   async setTyping(chat) {
@@ -116,6 +120,8 @@ export class MessageHandler {
     this.usersToRespondTo = new Set();
     this.client = null;
     this.processingInterval = processingInterval;
+    // Map to track last shut-up message timestamp per user (using phoneNumber)
+    this.shutupCooldowns = new Map();
   }
 
   setClient(client) {
@@ -155,15 +161,24 @@ export class MessageHandler {
       `${logContext} Processing message: "${message.body.substring(0, 50)}"`,
     );
 
-    const shutupUser = await ShutupUsers.findOne({
-      phoneNumber: contact.number,
-    });
-    if (shutupUser) {
-      await message.reply(`اسكت يا ${shutupUser.name}`);
+    // Don't send shut-up if the message is a command
+    const isCommand = message.body.startsWith("!");
+    if (!isCommand) {
+      const shutupUser = await ShutupUsers.findOne({
+        phoneNumber: contact.number,
+      });
+      if (shutupUser) {
+        const now = Date.now();
+        const lastTime = this.shutupCooldowns.get(contact.number) || 0;
+        if (now - lastTime >= SHUTUP_COOLDOWN) {
+          await message.reply(`اسكت يا ${shutupUser.name}`);
+          this.shutupCooldowns.set(contact.number, now);
+        }
+      }
     }
 
     try {
-      if (message.body.startsWith("!")) {
+      if (isCommand) {
         logger.info(`${logContext} Processing command`);
         await this.handleCommand(message, chat);
         return;

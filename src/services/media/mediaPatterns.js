@@ -6,5 +6,5 @@ export const MEDIA_PATTERNS = {
   facebook:
     /https?:\/\/(?:www\.)?facebook\.com\/(?:(?:watch\/\?v=\d+)|(?:[\w.-]+\/videos\/\d+)|(?:reel\/\d+)|(?:share\/r\/[\w-]+\/)|(?:[\w.-]+\/(?:posts|photos)\/[\w.-]+))(?:\?(?:[\w%&=.-]+))?/i,
   soundcloud:
-    /https?:\/\/(?:www\.)?soundcloud\.com\/[\w-]+\/[\w-]+(?:\?.*)?|https?:\/\/on\.soundcloud\.com\/[\w-]+/i,
+    /https?:\/\/(?:(?:www\.|m\.)?soundcloud\.com\/[\w-]+\/[\w-]+(?:\?.*)?|on\.soundcloud\.com\/[\w-]+)/i,
 };
