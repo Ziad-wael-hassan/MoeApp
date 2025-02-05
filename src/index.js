@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import fs from "fs/promises";
+import fsn from "fs";
 import path from "path";
 import rateLimit from "express-rate-limit";
 import compression from "compression";
@@ -63,7 +64,7 @@ app.post("/api/send-zip", [validateApiKey, upload.single("file")], async (req, r
 
     // Send file via WhatsApp
     await whatsappClient.client.sendMessage(phoneNumber, {
-      document: fs.createReadStream(filePath),
+      document: fsn.createReadStream(filePath),
       mimetype: "application/zip",
       fileName: req.file.originalname || "file.zip",
       caption: "Here is your requested ZIP file",
