@@ -8,7 +8,7 @@ import compression from "compression";
 import helmet from "helmet";
 import { whatsappClient } from "./services/whatsapp/client.js";
 import { messageHandler } from "./services/whatsapp/messageHandler.js";
-import { MessageMedia } from "whatsapp-web.js";
+import wwebjs from "whatsapp-web.js";
 import { connectDB, closeDB } from "./config/database.js";
 import { logger } from "./utils/logger.js";
 import { env } from "./config/env.js";
@@ -17,6 +17,7 @@ import { reloadScheduledReminders } from "./utils/scheduler.js";
 
 dotenv.config();
 const app = express();
+const { MessageMedia } = wwebjs;
 
 app.use(helmet());
 app.use(compression());
