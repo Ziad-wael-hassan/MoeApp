@@ -85,6 +85,32 @@ app.get("/", (req, res) => {
   res.sendFile(`${process.cwd()}/public/index.html`);
 });
 
+app.post("/api/auth/pair", [validateApiKey, apiLimiter], async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) {
+    return res.status(400).json({ error: "Phone number is required" });
+  }
+
+  if (whatsappClient.isAuthenticated) {
+    return res.status(400).json({ error: "Already authenticated" });
+  }
+
+  try {
+    const pairingCode = await whatsappClient.client.requestPairingCode(phone);
+    res.json({
+      success: true,
+      message: "Pairing code generated successfully",
+      code: pairingCode,
+    });
+  } catch (error) {
+    logger.error("Failed to generate pairing code:", error);
+    res.status(500).json({
+      error: "Failed to generate pairing code",
+      details: env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
 app.use((err, req, res, next) => {
   logger.error("Express error:", err);
   res.status(500).json({ error: "Internal server error" });
