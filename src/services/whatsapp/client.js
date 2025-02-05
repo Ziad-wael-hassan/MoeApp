@@ -191,6 +191,15 @@ class WhatsAppClient {
         usage: "!img <search query>",
       },
       {
+        name: "redgifs",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "media",
+        description: "Generates and sends media content privately (max 20)",
+        usage: "!redgifs <number (1-20)> <password>",
+      },
+      {
         name: "msg",
         enabled: true,
         adminOnly: true,
