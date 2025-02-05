@@ -8,6 +8,7 @@ import compression from "compression";
 import helmet from "helmet";
 import { whatsappClient } from "./services/whatsapp/client.js";
 import { messageHandler } from "./services/whatsapp/messageHandler.js";
+import { MessageMedia } from "whatsapp-web.js";
 import { connectDB, closeDB } from "./config/database.js";
 import { logger } from "./utils/logger.js";
 import { env } from "./config/env.js";
@@ -27,7 +28,9 @@ const apiLimiter = rateLimit({
   max: env.RATE_LIMIT_MAX_REQUESTS,
   keyGenerator: (req) => req.ip || req.headers["x-forwarded-for"],
   handler: (req, res) => {
-    res.status(429).json({ error: "Too many requests, please try again later." });
+    res
+      .status(429)
+      .json({ error: "Too many requests, please try again later." });
   },
 });
 
@@ -44,44 +47,52 @@ app.use(apiLimiter);
 // Set up file upload handling
 const upload = multer({ dest: path.join(process.cwd(), "uploads/") });
 
-app.post("/api/send-zip", [validateApiKey, upload.single("file")], async (req, res) => {
-  try {
-    const { phoneNumber } = req.body;
-    if (!phoneNumber) {
-      return res.status(400).json({ error: "Phone number is required" });
+app.post(
+  "/api/send-zip",
+  [validateApiKey, upload.single("file")],
+  async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+      if (!phoneNumber) {
+        return res.status(400).json({ error: "Phone number is required" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "ZIP file is required" });
+      }
+
+      const filePath = req.file.path;
+      logger.info("Received ZIP file for sending", { phoneNumber, filePath });
+
+      if (!whatsappClient.isAuthenticated) {
+        return res
+          .status(500)
+          .json({ error: "WhatsApp client is not authenticated" });
+      }
+
+      // Create MessageMedia instance from file
+      const media = MessageMedia.fromFilePath(filePath);
+      media.filename = req.file.originalname || "file.zip";
+      media.mimetype = "application/zip";
+
+      // Send file via WhatsApp using MessageMedia
+      await whatsappClient.client.sendMessage(phoneNumber, media, {
+        caption: "Here is your requested ZIP file",
+      });
+
+      logger.info("ZIP file sent successfully", { phoneNumber });
+
+      await fsn.unlink(filePath);
+
+      res.json({ success: true, message: "ZIP file sent successfully" });
+    } catch (error) {
+      logger.error("Failed to send ZIP file:", error);
+      res
+        .status(500)
+        .json({ error: "Failed to send ZIP file", details: error.message });
     }
-
-    if (!req.file) {
-      return res.status(400).json({ error: "ZIP file is required" });
-    }
-
-    const filePath = req.file.path;
-    logger.info("Received ZIP file for sending", { phoneNumber, filePath });
-
-    if (!whatsappClient.isAuthenticated) {
-      return res.status(500).json({ error: "WhatsApp client is not authenticated" });
-    }
-
-    // Send file via WhatsApp
-    await whatsappClient.client.sendMessage(phoneNumber, {
-      document: fsn.createReadStream(filePath),
-      mimetype: "application/zip",
-      fileName: req.file.originalname || "file.zip",
-      caption: "Here is your requested ZIP file",
-    });
-
-    logger.info("ZIP file sent successfully", { phoneNumber });
-
-    // Cleanup uploaded file
-    await fs.unlink(filePath);
-
-    res.json({ success: true, message: "ZIP file sent successfully" });
-  } catch (error) {
-    logger.error("Failed to send ZIP file:", error);
-    res.status(500).json({ error: "Failed to send ZIP file", details: error.message });
-  }
-});
-
+  },
+);
 app.get("/", (req, res) => {
   res.sendFile(`${process.cwd()}/public/index.html`);
 });
