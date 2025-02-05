@@ -77,13 +77,11 @@ app.post(
       media.mimetype = "application/zip";
 
       // Send file via WhatsApp using MessageMedia
-      await whatsappClient.client.sendMessage(phoneNumber, media, {
-        caption: "Here is your requested ZIP file",
-      });
+      await whatsappClient.client.sendMessage(phoneNumber, media);
 
       logger.info("ZIP file sent successfully", { phoneNumber });
 
-      await fsn.unlink(filePath);
+      await fs.unlink(filePath);
 
       res.json({ success: true, message: "ZIP file sent successfully" });
     } catch (error) {
