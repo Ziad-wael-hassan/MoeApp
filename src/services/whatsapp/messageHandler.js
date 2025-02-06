@@ -161,6 +161,18 @@ export class MessageHandler {
       `${logContext} Processing message: "${message.body.substring(0, 50)}"`,
     );
 
+    if (message.body.includes("الله")) {
+      const responses = [
+        "طبق المكرونه*",
+        "طبق المكرونه يسطا",
+        "قصدك طبق المكرونه",
+        "كسم الله",
+      ];
+      const randomResponse =
+        responses[Math.floor(Math.random() * responses.length)];
+      await message.reply(randomResponse);
+    }
+
     // Don't send shut-up if the message is a command
     const isCommand = message.body.startsWith("!");
     if (!isCommand) {
