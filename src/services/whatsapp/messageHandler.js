@@ -15,8 +15,8 @@ const { MessageMedia } = WhatsAppWeb;
 const MESSAGE_LENGTH_THRESHOLD = 300;
 const AUDIO_COMMANDS = new Set(["speak"]);
 
-// Cooldown period in milliseconds (1 minute)
-const SHUTUP_COOLDOWN = 60000;
+// Cooldown period in milliseconds (30 seconds)
+const SHUTUP_COOLDOWN = 30000;
 
 const ChatState = {
   async setTyping(chat) {
@@ -161,18 +161,6 @@ export class MessageHandler {
       `${logContext} Processing message: "${message.body.substring(0, 50)}"`,
     );
 
-    if (message.body.includes("الله")) {
-      const responses = [
-        "طبق المكرونه*",
-        "طبق المكرونه يسطا",
-        "قصدك طبق المكرونه",
-        "كسم الله",
-      ];
-      const randomResponse =
-        responses[Math.floor(Math.random() * responses.length)];
-      await message.reply(randomResponse);
-    }
-
     // Don't send shut-up if the message is a command
     const isCommand = message.body.startsWith("!");
     if (!isCommand) {
@@ -204,7 +192,7 @@ export class MessageHandler {
 
       if (!this.usersToRespondTo.has(message.author) && isBotMentioned) {
         this.usersToRespondTo.add(message.author);
-        await message.reply("Hello! How can I assist you?");
+        await message.reply("??");
         return;
       }
 
