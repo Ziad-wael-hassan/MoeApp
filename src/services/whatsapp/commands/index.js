@@ -39,7 +39,7 @@ async function processSongDownload(message, trackData) {
     await chat.sendStateRecording();
 
     const response = await axios.post(
-      "https://elghamazy-moeify.hf.space/fetch-mp3",
+      "https://elghamazy-moeify.hf.space/getSong",
       { url: trackData.url },
       {
         headers: {
