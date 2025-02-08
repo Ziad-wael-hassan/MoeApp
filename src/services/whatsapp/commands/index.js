@@ -38,15 +38,15 @@ async function processSongDownload(message, trackData) {
   try {
     await chat.sendStateRecording();
 
-    const response = await axios.post(
+    const response = await axios.get(
       "https://elghamazy-moeify.hf.space/getSong",
-      { url: trackData.url },
       {
+        params: { url: trackData.url },
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        timeout: 30000, // 30 second timeout
+        timeout: 30000, // 30-second timeout
       },
     );
 
