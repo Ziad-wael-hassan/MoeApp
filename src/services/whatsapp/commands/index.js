@@ -34,19 +34,20 @@ async function isAdmin(message) {
 
 async function processSongDownload(message, trackData) {
   const chat = await message.getChat();
-
+  
   try {
     await chat.sendStateRecording();
 
+    // Make the download request with the track URL
     const response = await axios.post(
       "https://elghamazy-moeify.hf.space/fetch-mp3",
-      { url: trackData.url },
+      { url: trackData.url }, // Use the Spotify URL from track data
       {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-      },
+      }
     );
 
     if (!response.data || !response.data.download || !response.data.track) {
@@ -67,13 +68,14 @@ async function processSongDownload(message, trackData) {
     const media = new MessageMedia(
       "audio/mpeg",
       Buffer.from(audioResponse.data).toString("base64"),
-      `${response.data.track.artist} - ${response.data.track.title}.mp3`,
+      `${response.data.track.artist} - ${response.data.track.title}.mp3`
     );
 
     await message.reply(media, null, {
       caption: caption,
       sendAudioAsVoice: false,
     });
+
   } catch (error) {
     throw error;
   } finally {
@@ -323,7 +325,7 @@ export const commandHandlers = {
     await message.reply(report);
   },
 
-  async song(message, args) {
+ async song(message, args) {
     if (args.length === 0) {
       await message.reply("Please provide a song URL or title.");
       return;
@@ -336,14 +338,10 @@ export const commandHandlers = {
       await chat.sendStateTyping();
 
       // First, check if it's a Spotify URL
-      if (query.includes("spotify.com/track/")) {
-        // Direct URL handling
-        const response = await axios.get(
-          "https://elghamazy-moeify.hf.space/getSong",
-          {
-            params: { url: query },
-          },
-        );
+      if (query.includes('spotify.com/track/')) {
+        const response = await axios.get('https://elghamazy-moeify.hf.space/getSong', {
+          params: { url: query }
+        });
 
         if (response.data) {
           await processSongDownload(message, response.data);
@@ -352,17 +350,11 @@ export const commandHandlers = {
       }
 
       // If not a URL, search for the song
-      const searchResponse = await axios.get(
-        "https://elghamazy-moeify.hf.space/search",
-        {
-          params: { query },
-        },
-      );
+      const searchResponse = await axios.get('https://elghamazy-moeify.hf.space/search', {
+        params: { query }
+      });
 
-      if (
-        !searchResponse.data.results ||
-        searchResponse.data.results.length === 0
-      ) {
+      if (!searchResponse.data.results || searchResponse.data.results.length === 0) {
         await message.reply("No songs found matching your query.");
         return;
       }
@@ -381,54 +373,59 @@ export const commandHandlers = {
       // Create a promise that resolves when a valid reply is received
       const replyPromise = new Promise((resolve, reject) => {
         const handler = async (reply) => {
-          // Check if the reply is to our results message and from the original requester
           if (reply.hasQuotedMsg) {
             const quotedMessage = await reply.getQuotedMessage();
-            if (
-              quotedMessage.id._serialized === resultsMessage.id._serialized &&
-              reply.author === message.author
-            ) {
-              // Try to parse the reply as a number
+            if (quotedMessage.id._serialized === resultsMessage.id._serialized &&
+                reply.author === message.author) {
+              
               const selection = parseInt(reply.body);
-              if (
-                !isNaN(selection) &&
-                selection > 0 &&
-                selection <= results.length
-              ) {
-                message.client.removeListener("message", handler);
+              if (!isNaN(selection) && selection > 0 && selection <= results.length) {
+                message.client.removeListener('message', handler);
                 resolve({ selectedTrack: results[selection - 1], reply });
               }
             }
           }
         };
 
-        message.client.on("message", handler);
+        message.client.on('message', handler);
 
-        // Set timeout
         setTimeout(() => {
-          message.client.removeListener("message", handler);
-          reject(new Error("Selection timed out"));
+          message.client.removeListener('message', handler);
+          reject(new Error('Selection timed out'));
         }, SONG_SELECTION_TIMEOUT);
       });
 
       try {
         // Wait for user selection
-        const { selectedTrack, reply } = await replyPromise;
+        const { selectedTrack } = await replyPromise;
+        
+        // Edit the original results message to show loading
+        await resultsMessage.edit('*Downloading your selected song...*');
 
-        // Edit original message to show loading
-        await reply.reply("*Downloading selected song...*");
+        // Get song details using getSong endpoint
+        const songDetailsResponse = await axios.get('https://elghamazy-moeify.hf.space/getSong', {
+          params: { url: selectedTrack.url }
+        });
 
-        // Process the selected song
-        await processSongDownload(message, selectedTrack);
+        if (!songDetailsResponse.data) {
+          throw new Error('Failed to get song details');
+        }
+
+        // Download the song using the track URL
+        await processSongDownload(message, songDetailsResponse.data);
+        
+        // Edit the message one final time
+        await resultsMessage.edit('✅ *Download completed!*');
+        
       } catch (error) {
-        if (error.message === "Selection timed out") {
-          await resultsMessage.reply(
-            "❌ Song selection timed out. Please try again.",
-          );
+        if (error.message === 'Selection timed out') {
+          await resultsMessage.edit('❌ Song selection timed out. Please try again.');
         } else {
+          await resultsMessage.edit('❌ Failed to download the song. Please try again.');
           throw error;
         }
       }
+
     } catch (error) {
       logger.error(
         {
@@ -446,15 +443,13 @@ export const commandHandlers = {
       if (error.response) {
         switch (error.response.status) {
           case 404:
-            errorMessage =
-              "Song not found. Please check your query and try again.";
+            errorMessage = "Song not found. Please check your query and try again.";
             break;
           case 429:
             errorMessage = "Too many requests. Please try again later.";
             break;
           case 400:
-            errorMessage =
-              "Invalid request. Please try a different song or URL.";
+            errorMessage = "Invalid request. Please try a different song or URL.";
             break;
           case 500:
             errorMessage = "Server error. Please try again later.";
