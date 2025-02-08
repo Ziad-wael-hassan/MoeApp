@@ -191,6 +191,16 @@ class WhatsAppClient {
         usage: "!img <search query>",
       },
       {
+        name: "song",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "media",
+        description:
+          "Downloads and sends a song with its information from a URL or search query",
+        usage: "!song <URL/song title>",
+      },
+      {
         name: "redgifs",
         enabled: true,
         adminOnly: false,

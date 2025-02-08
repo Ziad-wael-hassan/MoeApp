@@ -204,6 +204,77 @@ export const commandHandlers = {
     );
   },
 
+  async song(message, args) {
+    if (args.length === 0) {
+      await message.reply("Please provide a song URL or title.");
+      return;
+    }
+
+    const query = args.join(" ");
+    const chat = await message.getChat();
+
+    try {
+      // Show typing indicator while processing
+      await chat.sendStateTyping();
+
+      // Make API request to get song details
+      const response = await axios.get(`https://elghamazy-moeify.hf.space/fetch-mp3`, {
+        params: {
+          url: query
+        },
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      const { track, download } = response.data;
+
+      // Format song information
+      const caption = `🎵 *${track.title}*\n👤 ${track.artist}\n💿 ${track.album}\n📅 ${track.releaseDate}`;
+
+      // Show recording state while downloading
+      await chat.sendStateRecording();
+
+      // Download and send the audio file
+      const audioResponse = await axios.get(download.downloadUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000, // 30 seconds timeout
+        headers: {
+          'Accept': 'audio/mpeg'
+        }
+      });
+
+      const media = new MessageMedia(
+        'audio/mpeg',
+        Buffer.from(audioResponse.data).toString('base64'),
+        `${track.artist} - ${track.title}.mp3`
+      );
+
+      // Send the audio file with caption
+      await message.reply(media, null, {
+        caption: caption,
+        sendAudioAsVoice: false // Send as music file
+      });
+
+      // Clear recording state
+      await chat.clearState();
+    } catch (error) {
+      logger.error({ err: error }, "Error in song command:");
+      await chat.clearState();
+      
+      let errorMessage = "Failed to process the song request.";
+      if (error.response) {
+        if (error.response.status === 404) {
+          errorMessage = "Song not found. Please check your query and try again.";
+        } else if (error.response.status === 429) {
+          errorMessage = "Too many requests. Please try again later.";
+        }
+      }
+      
+      await message.reply(errorMessage);
+    }
+  },
+
   async pfp(message) {
     try {
       let targetContact;
