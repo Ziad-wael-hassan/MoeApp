@@ -48,35 +48,37 @@ async function processSongDownload(message, trackData) {
       timeout: 30000, // 30-second timeout
     });
 
-    // Destructure the expected properties from the response
+    // Destructure the expected properties from the API response
     const { title, artist, album, cover, url } = response.data;
-
-    // Ensure the necessary properties are present
     if (!title || !artist || !album || !url) {
       throw new Error("Invalid response format");
     }
 
-    // Create a caption using the track details
+    // Create a caption with the track details
     const caption = `🎵 *${title}*\n👤 ${artist}\n💿 ${album}`;
 
-    // Download the song audio file from the URL provided in the response
+    // Download the audio file from the URL returned by the API.
+    // (This URL must point to a direct MP3 file.)
     const audioResponse = await axios.get(url, {
       responseType: "arraybuffer",
       timeout: 60000, // 60-second timeout for download
-      headers: {
-        Accept: "audio/mpeg",
-      },
+      headers: { Accept: "audio/mpeg" },
       maxContentLength: 50 * 1024 * 1024,
     });
 
-    // Create a MessageMedia instance using the downloaded audio
-    const media = new MessageMedia(
-      "audio/mpeg",
-      Buffer.from(audioResponse.data).toString("base64"),
-      `${artist} - ${title}.mp3`
-    );
+    // Verify that the returned content is audio by checking its Content-Type header
+    const contentType = audioResponse.headers["content-type"];
+    if (!contentType || !contentType.includes("audio")) {
+      throw new Error(`Downloaded content is not audio. Content-Type received: ${contentType}`);
+    }
 
-    // Send the audio message with the caption
+    // Convert the downloaded audio data to a base64-encoded string
+    const base64Audio = Buffer.from(audioResponse.data).toString("base64");
+
+    // Create a MessageMedia instance for WhatsApp using the downloaded audio data
+    const media = new MessageMedia("audio/mpeg", base64Audio, `${artist} - ${title}.mp3`);
+
+    // Send the audio message with the track caption
     await message.reply(media, null, {
       caption: caption,
       sendAudioAsVoice: false,
