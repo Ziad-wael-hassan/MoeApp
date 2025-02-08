@@ -217,15 +217,22 @@ export const commandHandlers = {
       // Show typing indicator while processing
       await chat.sendStateTyping();
 
-      // Make API request to get song details
-      const response = await axios.get(`https://elghamazy-moeify.hf.space/fetch-mp3`, {
-        params: {
-          url: query
+      // Make API request to get song details - using POST instead of GET
+      const response = await axios.post(
+        "https://elghamazy-moeify.hf.space/fetch-mp3",
+        { url: query }, // Send as JSON body
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
         },
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
+      );
+
+      // Validate response data
+      if (!response.data || !response.data.track || !response.data.download) {
+        throw new Error("Invalid response format from API");
+      }
 
       const { track, download } = response.data;
 
@@ -235,42 +242,78 @@ export const commandHandlers = {
       // Show recording state while downloading
       await chat.sendStateRecording();
 
-      // Download and send the audio file
-      const audioResponse = await axios.get(download.downloadUrl, {
-        responseType: 'arraybuffer',
-        timeout: 30000, // 30 seconds timeout
-        headers: {
-          'Accept': 'audio/mpeg'
-        }
-      });
+      // Download and send the audio file with better error handling
+      try {
+        const audioResponse = await axios.get(download.downloadUrl, {
+          responseType: "arraybuffer",
+          timeout: 30000, // 30 seconds timeout
+          headers: {
+            Accept: "audio/mpeg",
+          },
+          maxContentLength: 50 * 1024 * 1024, // 50MB max
+        });
 
-      const media = new MessageMedia(
-        'audio/mpeg',
-        Buffer.from(audioResponse.data).toString('base64'),
-        `${track.artist} - ${track.title}.mp3`
-      );
+        const media = new MessageMedia(
+          "audio/mpeg",
+          Buffer.from(audioResponse.data).toString("base64"),
+          `${track.artist} - ${track.title}.mp3`,
+        );
 
-      // Send the audio file with caption
-      await message.reply(media, null, {
-        caption: caption,
-        sendAudioAsVoice: false // Send as music file
-      });
+        // Send the audio file with caption
+        await message.reply(media, null, {
+          caption: caption,
+          sendAudioAsVoice: false, // Send as music file
+        });
+      } catch (downloadError) {
+        logger.error(
+          {
+            err: downloadError,
+            url: download.downloadUrl,
+          },
+          "Error downloading audio:",
+        );
+        throw new Error("Failed to download the audio file");
+      }
 
       // Clear recording state
       await chat.clearState();
     } catch (error) {
-      logger.error({ err: error }, "Error in song command:");
+      logger.error(
+        {
+          err: error,
+          query: query,
+          errorResponse: error.response?.data,
+          errorStatus: error.response?.status,
+        },
+        "Error in song command:",
+      );
+
       await chat.clearState();
-      
+
       let errorMessage = "Failed to process the song request.";
+
       if (error.response) {
-        if (error.response.status === 404) {
-          errorMessage = "Song not found. Please check your query and try again.";
-        } else if (error.response.status === 429) {
-          errorMessage = "Too many requests. Please try again later.";
+        switch (error.response.status) {
+          case 404:
+            errorMessage =
+              "Song not found. Please check your query and try again.";
+            break;
+          case 429:
+            errorMessage = "Too many requests. Please try again later.";
+            break;
+          case 400:
+            errorMessage =
+              "Invalid request. Please try a different song or URL.";
+            break;
+          case 500:
+            errorMessage = "Server error. Please try again later.";
+            break;
         }
+      } else if (error.message === "Failed to download the audio file") {
+        errorMessage =
+          "Sorry, couldn't download the audio file. Please try again.";
       }
-      
+
       await message.reply(errorMessage);
     }
   },
