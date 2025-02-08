@@ -38,39 +38,45 @@ async function processSongDownload(message, trackData) {
   try {
     await chat.sendStateRecording();
 
-    const response = await axios.get(
-      "https://elghamazy-moeify.hf.space/getSong",
-      {
-        params: { url: trackData.url },
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        timeout: 30000, // 30-second timeout
+    // Request track details from the API
+    const response = await axios.get("https://elghamazy-moeify.hf.space/getSong", {
+      params: { url: trackData.url },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
-    );
+      timeout: 30000, // 30-second timeout
+    });
 
-    if (!response.data?.download?.downloadUrl || !response.data?.track) {
-      throw new Error("Invalid download response format");
+    // Destructure the expected properties from the response
+    const { title, artist, album, cover, url } = response.data;
+
+    // Ensure the necessary properties are present
+    if (!title || !artist || !album || !url) {
+      throw new Error("Invalid response format");
     }
 
-    const caption = `🎵 *${response.data.track.title}*\n👤 ${response.data.track.artist}\n💿 ${response.data.track.album}\n📅 ${response.data.track.releaseDate}`;
+    // Create a caption using the track details
+    const caption = `🎵 *${title}*\n👤 ${artist}\n💿 ${album}`;
 
-    const audioResponse = await axios.get(response.data.download.downloadUrl, {
+    // Download the song audio file from the URL provided in the response
+    const audioResponse = await axios.get(url, {
       responseType: "arraybuffer",
-      timeout: 60000, // 60 second timeout for download
+      timeout: 60000, // 60-second timeout for download
       headers: {
         Accept: "audio/mpeg",
       },
       maxContentLength: 50 * 1024 * 1024,
     });
 
+    // Create a MessageMedia instance using the downloaded audio
     const media = new MessageMedia(
       "audio/mpeg",
       Buffer.from(audioResponse.data).toString("base64"),
-      `${response.data.track.artist} - ${response.data.track.title}.mp3`,
+      `${artist} - ${title}.mp3`
     );
 
+    // Send the audio message with the caption
     await message.reply(media, null, {
       caption: caption,
       sendAudioAsVoice: false,
@@ -85,6 +91,7 @@ async function processSongDownload(message, trackData) {
     await chat.clearState();
   }
 }
+
 async function fetchFile(url) {
   try {
     const response = await axios.get(url, {
