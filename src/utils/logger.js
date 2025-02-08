@@ -14,6 +14,33 @@ const sendMessageToAdmins = async (message) => {
   );
 };
 
+// Helper function to safely stringify errors
+const safeStringify = (obj) => {
+  const seen = new WeakSet();
+  return JSON.stringify(
+    obj,
+    (key, value) => {
+      if (value instanceof Error) {
+        return {
+          name: value.name,
+          message: value.message,
+          stack: value.stack,
+          ...(value.response?.data && { responseData: value.response.data }),
+          ...(value.response?.status && { status: value.response.status }),
+        };
+      }
+      if (typeof value === "object" && value !== null) {
+        if (seen.has(value)) {
+          return "[Circular]";
+        }
+        seen.add(value);
+      }
+      return value;
+    },
+    2,
+  );
+};
+
 const logger = {
   info: (message, ...args) =>
     console.log(chalk.blue(`[INFO]: ${message}`), ...args),
@@ -21,20 +48,18 @@ const logger = {
     isDev && console.debug(chalk.green(`[DEBUG]: ${message}`), ...args),
   warn: (message, ...args) =>
     console.warn(chalk.yellow(`[WARN]: ${message}`), ...args),
-  error: async (message, ...args) => {
-    const errorMessage = `[ERROR]: ${message}`;
-    console.error(chalk.red(errorMessage), ...args);
+  error: async (error, message, ...args) => {
+    const errorObj = {
+      timestamp: new Date().toISOString(),
+      message: message,
+      error: error,
+      additionalInfo: args,
+    };
 
-    // Format the error message and arguments to send to admins using JSON.stringify
-    const adminMessage = JSON.stringify(
-      {
-        error: errorMessage,
-        details: args,
-      },
-      null,
-      2,
-    );
+    console.error(chalk.red(`[ERROR]: ${message}`), error, ...args);
 
+    // Format the error message for admins
+    const adminMessage = `🚨 *Error Report*\n\n${safeStringify(errorObj)}`;
     await sendMessageToAdmins(adminMessage);
   },
 };
