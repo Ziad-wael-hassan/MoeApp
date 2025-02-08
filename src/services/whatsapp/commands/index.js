@@ -9,26 +9,17 @@ import { scheduleReminder } from "../../../utils/scheduler.js";
 
 const { MessageMedia } = WhatsAppWeb;
 
-const NUMBER_EMOJIS = [
-  "1️⃣",
-  "2️⃣",
-  "3️⃣",
-  "4️⃣",
-  "5️⃣",
-  "6️⃣",
-  "7️⃣",
-  "8️⃣",
-  "9️⃣",
-  "🔟",
-];
 const SONG_SELECTION_TIMEOUT = 60000; // 60 seconds timeout for selection
 
 function formatSearchResults(results) {
   let message = "*🎵 Found these songs:*\n\n";
   results.forEach((track, index) => {
-    message += `${NUMBER_EMOJIS[index]} ${track.title}\n👤 ${track.artist}\n💿 ${track.album}\n\n`;
+    message += `*${index + 1}.* ${track.title}\n👤 ${track.artist}\n💿 ${track.album}\n\n`;
   });
-  message += "\n_Click a number to select a song_";
+  message +=
+    "\n_Reply with the number of the song you want to download (1-" +
+    results.length +
+    ")_";
   return message;
 }
 
@@ -45,10 +36,8 @@ async function processSongDownload(message, trackData) {
   const chat = await message.getChat();
 
   try {
-    // Show recording state while downloading
     await chat.sendStateRecording();
 
-    // Make API request to get song details and download URL
     const response = await axios.post(
       "https://elghamazy-moeify.hf.space/fetch-mp3",
       { url: trackData.url },
@@ -64,17 +53,15 @@ async function processSongDownload(message, trackData) {
       throw new Error("Invalid response from download API");
     }
 
-    // Format song information
     const caption = `🎵 *${response.data.track.title}*\n👤 ${response.data.track.artist}\n💿 ${response.data.track.album}\n📅 ${response.data.track.releaseDate}`;
 
-    // Download the audio file
     const audioResponse = await axios.get(response.data.download.downloadUrl, {
       responseType: "arraybuffer",
       timeout: 30000,
       headers: {
         Accept: "audio/mpeg",
       },
-      maxContentLength: 50 * 1024 * 1024, // 50MB max
+      maxContentLength: 50 * 1024 * 1024,
     });
 
     const media = new MessageMedia(
@@ -83,7 +70,6 @@ async function processSongDownload(message, trackData) {
       `${response.data.track.artist} - ${response.data.track.title}.mp3`,
     );
 
-    // Send the audio file with caption
     await message.reply(media, null, {
       caption: caption,
       sendAudioAsVoice: false,
@@ -389,57 +375,56 @@ export const commandHandlers = {
         return;
       }
 
-      // Send results message with number reactions
+      // Send results message
       const resultsMessage = await message.reply(formatSearchResults(results));
 
-      // Add number reactions
-      for (let i = 0; i < results.length; i++) {
-        await resultsMessage.react(NUMBER_EMOJIS[i]);
-      }
-
-      // Set up reaction collector
-      const filter = (reaction) => NUMBER_EMOJIS.includes(reaction.emoji);
-
-      // Create a promise that resolves when a valid reaction is received
-      const reactionPromise = new Promise((resolve, reject) => {
-        const collector = message.client.on(
-          "message_reaction",
-          async (reaction) => {
+      // Create a promise that resolves when a valid reply is received
+      const replyPromise = new Promise((resolve, reject) => {
+        const handler = async (reply) => {
+          // Check if the reply is to our results message and from the original requester
+          if (reply.hasQuotedMsg) {
+            const quotedMessage = await reply.getQuotedMessage();
             if (
-              reaction.msgId === resultsMessage.id._serialized &&
-              reaction.senderId === message.author &&
-              filter(reaction)
+              quotedMessage.id._serialized === resultsMessage.id._serialized &&
+              reply.author === message.author
             ) {
-              const index = NUMBER_EMOJIS.indexOf(reaction.emoji);
-              if (index !== -1 && index < results.length) {
-                resolve(results[index]);
+              // Try to parse the reply as a number
+              const selection = parseInt(reply.body);
+              if (
+                !isNaN(selection) &&
+                selection > 0 &&
+                selection <= results.length
+              ) {
+                message.client.removeListener("message", handler);
+                resolve({ selectedTrack: results[selection - 1], reply });
               }
             }
-          },
-        );
+          }
+        };
+
+        message.client.on("message", handler);
 
         // Set timeout
         setTimeout(() => {
+          message.client.removeListener("message", handler);
           reject(new Error("Selection timed out"));
-          message.client.removeListener("message_reaction", collector);
         }, SONG_SELECTION_TIMEOUT);
       });
 
       try {
         // Wait for user selection
-        const selectedTrack = await reactionPromise;
+        const { selectedTrack, reply } = await replyPromise;
 
-        // Edit message to show loading
-        await resultsMessage.edit("*Downloading selected song...*");
+        // Edit original message to show loading
+        await reply.reply("*Downloading selected song...*");
 
         // Process the selected song
         await processSongDownload(message, selectedTrack);
-
-        // Remove all reactions
-        await resultsMessage.delete();
       } catch (error) {
         if (error.message === "Selection timed out") {
-          await resultsMessage.edit("❌ Song selection timed out.");
+          await resultsMessage.reply(
+            "❌ Song selection timed out. Please try again.",
+          );
         } else {
           throw error;
         }
