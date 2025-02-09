@@ -42,7 +42,7 @@ async function processSongDownload(message, trackData) {
     const response = await axios.get(
       "https://elghamazy-moeify.hf.space/getSong",
       {
-        params: { url: trackData.url },
+        params: { url: trackData.urls.sporifyUrl },
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
@@ -94,7 +94,7 @@ async function processSongDownload(message, trackData) {
     });
   } catch (error) {
     logger.error(error, "Error downloading song", {
-      trackUrl: trackData.url,
+      trackUrl: trackData.urls.downloadUrl,
       trackTitle: trackData.title,
     });
     throw error;
