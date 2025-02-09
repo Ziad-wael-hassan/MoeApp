@@ -39,18 +39,21 @@ async function processSongDownload(message, trackData) {
     await chat.sendStateRecording();
 
     // Request track details from the API
-    const response = await axios.get("https://elghamazy-moeify.hf.space/getSong", {
-      params: { url: trackData.url },
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
+    const response = await axios.get(
+      "https://elghamazy-moeify.hf.space/getSong",
+      {
+        params: { url: trackData.url },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        timeout: 30000, // 30-second timeout
       },
-      timeout: 30000, // 30-second timeout
-    });
+    );
 
     // Destructure the expected properties from the API response
-    const { title, artist, album, cover, url } = response.data;
-    if (!title || !artist || !album || !url) {
+    const { title, artist, album, cover, urls } = response.data;
+    if (!title || !artist || !album || !urls) {
       throw new Error("Invalid response format");
     }
 
@@ -59,7 +62,7 @@ async function processSongDownload(message, trackData) {
 
     // Download the audio file from the URL returned by the API.
     // (This URL must point to a direct MP3 file.)
-    const audioResponse = await axios.get(url, {
+    const audioResponse = await axios.get(urls.downloadUrl, {
       responseType: "arraybuffer",
       timeout: 60000, // 60-second timeout for download
       headers: { Accept: "audio/mpeg" },
@@ -69,14 +72,20 @@ async function processSongDownload(message, trackData) {
     // Verify that the returned content is audio by checking its Content-Type header
     const contentType = audioResponse.headers["content-type"];
     if (!contentType || !contentType.includes("audio")) {
-      throw new Error(`Downloaded content is not audio. Content-Type received: ${contentType}`);
+      throw new Error(
+        `Downloaded content is not audio. Content-Type received: ${contentType}`,
+      );
     }
 
     // Convert the downloaded audio data to a base64-encoded string
     const base64Audio = Buffer.from(audioResponse.data).toString("base64");
 
     // Create a MessageMedia instance for WhatsApp using the downloaded audio data
-    const media = new MessageMedia("audio/mpeg", base64Audio, `${artist} - ${title}.mp3`);
+    const media = new MessageMedia(
+      "audio/mpeg",
+      base64Audio,
+      `${artist} - ${title}.mp3`,
+    );
 
     // Send the audio message with the track caption
     await message.reply(media, null, {
