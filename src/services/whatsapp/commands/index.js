@@ -42,7 +42,7 @@ async function processSongDownload(message, trackData) {
     const response = await axios.get(
       "https://elghamazy-moeify.hf.space/getSong",
       {
-        params: { url: trackData.urls.sporifyUrl },
+        params: { url: trackData.urls.spotifyUrl },
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
