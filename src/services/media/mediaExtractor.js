@@ -3,12 +3,6 @@ import { logger } from "../../utils/logger.js";
 import WhatsAppWeb from "whatsapp-web.js";
 import axios from "axios";
 import { MEDIA_PATTERNS } from "./mediaPatterns.js";
-import {
-  extractInstagramMedia,
-  extractTikTokMedia,
-  extractFacebookMedia,
-  extractSoundCloudMedia,
-} from "./extractors.js";
 
 const { MessageMedia } = WhatsAppWeb;
 const PROCESSING_TIMEOUT = 60000; // 60 seconds
@@ -29,6 +23,38 @@ const axiosInstance = axios.create({
   maxContentLength: 50 * 1024 * 1024, // 50MB max
   maxBodyLength: 50 * 1024 * 1024, // 50MB max
 });
+
+async function extractMediaWithCobalt(url, options = {}) {
+  const cobaltUrl = "https://nuclear-ashien-cobalto-d51291d3.koyeb.app/";
+
+  const payload = {
+    url,
+    videoQuality: "720",
+    youtubeHLS: true,
+    twitterGif: false,
+    tiktokH265: true,
+    alwaysProxy: true,
+    ...options,
+  };
+
+  try {
+    const response = await axios.post(cobaltUrl, payload, {
+      headers: {
+        accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.status !== 200 || !response.data) {
+      throw new Error("Failed to fetch media details from Cobalt");
+    }
+
+    return response.data;
+  } catch (error) {
+    logger.error("Cobalt extraction error:", error);
+    throw error;
+  }
+}
 
 // Extract URLs from message
 function extractUrl(messageBody) {
@@ -68,87 +94,40 @@ async function downloadMedia(url) {
   return { base64, mimeType };
 }
 
-// Extract media URL based on platform
-async function extractMediaUrl(url, mediaType) {
-  if (!url || !mediaType) {
-    throw new Error("Invalid URL or media type");
-  }
-
-  const extractors = {
-    instagram: extractInstagramMedia,
-    tiktok: extractTikTokMedia,
-    facebook: extractFacebookMedia,
-    soundcloud: extractSoundCloudMedia, // This extractor returns a buffer.
-  };
-
-  const extractor = extractors[mediaType];
-  if (!extractor) {
-    throw new Error(`No extractor available for media type: ${mediaType}`);
-  }
-
-  try {
-    const extractPromise = extractor(url);
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error("Media extraction timed out")),
-        PROCESSING_TIMEOUT,
-      ),
-    );
-
-    // Wait for either the extraction or timeout
-    const mediaData = await Promise.race([extractPromise, timeoutPromise]);
-
-    if (mediaData.buffer) {
-      // If the extractor returns a buffer, pass it as-is
-      return mediaData; // { buffer, mimeType }
-    }
-
-    // Otherwise, assume it's a URL
-    return { url: mediaData };
-  } catch (error) {
-    logger.error("Media extraction failed:", error);
-    throw error;
-  }
-}
-
 async function sendMedia(url, message) {
   if (!url || !message) return false;
 
   try {
-    const mediaType = getMediaType(url);
-    if (!mediaType) return false;
-
-    logger.info(`Processing ${mediaType} URL: ${url}`);
-    const mediaData = await extractMediaUrl(url, mediaType);
+    const mediaData = await extractMediaWithCobalt(url);
 
     logger.debug(`Extracted media data: ${JSON.stringify(mediaData)}`);
 
-    if (mediaType === "soundcloud" && mediaData.buffer) {
-      // Validate buffer before sending
-      if (Buffer.isBuffer(mediaData.buffer) && mediaData.buffer.length > 0) {
-        const base64Buffer = mediaData.buffer.toString("base64");
-        const media = new MessageMedia(mediaData.mimeType, base64Buffer);
+    if (mediaData.status === "picker" && Array.isArray(mediaData.picker)) {
+      for (const item of mediaData.picker) {
+        if (item.type === "photo" && item.url) {
+          const { base64, mimeType } = await downloadMedia(item.url);
+          logger.debug(
+            `Downloaded media - URL: ${item.url}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
+          );
 
-        await message.reply(media);
-        return true;
-      } else {
-        throw new Error("Invalid buffer returned from SoundCloud extractor");
+          const media = new MessageMedia(mimeType, base64);
+          await message.reply(media);
+        }
       }
-    }
+    } else {
+      const mediaUrls = Array.isArray(mediaData.url)
+        ? mediaData.url
+        : [mediaData.url];
 
-    // For URL-based media, proceed as usual
-    const mediaUrls = Array.isArray(mediaData.url)
-      ? mediaData.url
-      : [mediaData.url];
+      for (const mediaUrl of mediaUrls) {
+        const { base64, mimeType } = await downloadMedia(mediaUrl);
+        logger.debug(
+          `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
+        );
 
-    for (const mediaUrl of mediaUrls) {
-      const { base64, mimeType } = await downloadMedia(mediaUrl);
-      logger.debug(
-        `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
-      );
-
-      const media = new MessageMedia(mimeType, base64);
-      await message.reply(media);
+        const media = new MessageMedia(mimeType, base64);
+        await message.reply(media);
+      }
     }
 
     return true;
@@ -166,9 +145,6 @@ export async function handleMediaExtraction(message) {
     const url = extractUrl(message.body);
     if (!url) return { processed: false };
 
-    const mediaType = getMediaType(url);
-    if (!mediaType) return { processed: false };
-
     const chat = await message.getChat();
     await chat.sendStateTyping();
 
@@ -176,7 +152,6 @@ export async function handleMediaExtraction(message) {
 
     return {
       processed: success,
-      mediaType,
       url,
     };
   } catch (error) {
