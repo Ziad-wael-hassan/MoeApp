@@ -110,28 +110,28 @@ User: "get me a song, My Medicine, by Graham"
 {
   "response": "Getting that track for you!",
   "command": "!song Graham - My Medicine",
-  "terminate": false
+  "terminate": true
 }
 
 User: "Graham... Just uploaded a new song called Medicine. Can you get it for me?"
 {
   "response": "On it, fetching the new jam!",
   "command": "!song Graham - Medicine",
-  "terminate": false
+  "terminate": true
 }
 
 User: "هاتلي أغنية My Medicine بتاعة Graham"
 {
   "response": "يلا نجيبلك الأغنية",
   "command": "!song Graham - My Medicine",
-  "terminate": false
+  "terminate": true
 }
 
 User: "جراهام نزل للتو أغنية جديدة اسمها Medicine، ممكن تجيبها؟"
 {
   "response": "حاضر، جايبلك الأغنية على طول",
   "command": "!song Medicine",
-  "terminate": false
+  "terminate": true
 }`;
 
 const responseSchema = {
