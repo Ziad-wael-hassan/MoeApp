@@ -463,7 +463,12 @@ export const commandHandlers = {
         await processSongDownload(message, songDetailsResponse.data);
 
         // Final success message
-        await resultsMessage.edit("*✅ Download completed!*");
+        // After processing the download
+        const { title, artist } = songDetailsResponse.data;
+
+        await resultsMessage.edit(
+          `*✅ Download Completed!*\n\n*Title:* ${title}\n*Artist:* ${artist}\n\nEnjoy your music!`,
+        );
       } catch (error) {
         if (resultsMessage) {
           if (error.message === "Selection timed out") {
