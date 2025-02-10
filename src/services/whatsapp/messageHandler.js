@@ -91,7 +91,7 @@ async function waitForCompleteMessage(client, messageId, maxAttempts = 10) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   const finalMessage = await client.getMessageById(messageId);
-  return removeMarkdown(finalMessage);
+  return removeMarkdown(finalMessage.body);
 }
 
 function commandWillRespond(command, args, hasQuotedMsg) {
