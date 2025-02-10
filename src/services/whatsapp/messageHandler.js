@@ -70,7 +70,7 @@ async function generateVoiceIfNeeded(text, message) {
   }
 }
 
-async function waitForCompleteMessage(client, messageId, maxAttempts = 10) {
+async function waitForCompleteMessage(client, messageId, maxAttempts = 100) {
   let previousMessage = "";
   let sameContentCount = 0;
   let attempt = 0;
@@ -88,7 +88,7 @@ async function waitForCompleteMessage(client, messageId, maxAttempts = 10) {
 
     previousMessage = currentContent;
     attempt++;
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   const finalMessage = await client.getMessageById(messageId);
   return removeMarkdown(finalMessage.body);
