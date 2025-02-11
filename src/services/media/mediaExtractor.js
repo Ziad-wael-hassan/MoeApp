@@ -115,8 +115,18 @@ async function sendMedia(url, message) {
           `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
         );
 
-        const media = new MessageMedia(mimeType, base64, mediaData.filename);
-        await message.reply(media);
+        const media = new MessageMedia(
+          mimeType,
+          base64,
+          mediaData.filename || undefined
+        );
+
+        // Check if it's an audio file
+        if (mimeType.startsWith('audio/')) {
+          await message.reply(media, null, { sendAudioAsVoice: false });
+        } else {
+          await message.reply(media);
+        }
       }
     }
 
