@@ -1,5 +1,10 @@
 import { textToSpeech } from "../../audio/tts.js";
-import { ShutupUsers, Commands, Settings } from "../../../config/database.js";
+import {
+  ShutupUsers,
+  Commands,
+  Settings,
+  StoryTracking,
+} from "../../../config/database.js";
 import { logger } from "../../../utils/logger.js";
 import gis from "async-g-i-s";
 import https from "https";
@@ -520,6 +525,131 @@ export const commandHandlers = {
       }
     } finally {
       await chat.clearState();
+    }
+  },
+
+  async track(message, args) {
+    try {
+      let targetNumber;
+
+      // Handle no arguments
+      if (args.length === 0) {
+        await message.reply(
+          "Usage: !track <number/mention>\nOr: !track list\nOr: !track stop <number/mention>",
+        );
+        return;
+      }
+
+      // Get tracker's contact info
+      const trackerContact = await message.getContact();
+      const trackerNumber = `${trackerContact.number}@c.us`;
+
+      // Handle subcommands
+      if (args[0].toLowerCase() === "list") {
+        const trackingList = await StoryTracking.find({
+          trackerNumber,
+          active: true,
+        });
+
+        if (trackingList.length === 0) {
+          await message.reply("You are not tracking any numbers.");
+          return;
+        }
+
+        let response = "*Currently tracking:*\n\n";
+        for (const track of trackingList) {
+          const contact = await message.client.getContactById(
+            track.targetNumber,
+          );
+          response += `📱 ${contact.pushname || "Unknown"} (${track.targetNumber.split("@")[0]})\n`;
+        }
+        await message.reply(response);
+        return;
+      }
+
+      if (args[0].toLowerCase() === "stop") {
+        if (args.length < 2) {
+          await message.reply(
+            "Please specify a number/mention to stop tracking.",
+          );
+          return;
+        }
+
+        // Get target number
+        if (message.mentionedIds.length > 0) {
+          targetNumber = message.mentionedIds[0];
+        } else {
+          const number = args[1].replace(/[^0-9]/g, "");
+          targetNumber = `${number}@c.us`;
+        }
+
+        // Stop tracking
+        const result = await StoryTracking.updateOne(
+          {
+            targetNumber,
+            trackerNumber,
+            active: true,
+          },
+          {
+            $set: { active: false },
+          },
+        );
+
+        if (result.modifiedCount > 0) {
+          await message.reply("Successfully stopped tracking stories.");
+        } else {
+          await message.reply("You were not tracking this number.");
+        }
+        return;
+      }
+
+      // Handle tracking new number
+      if (message.mentionedIds.length > 0) {
+        targetNumber = message.mentionedIds[0];
+      } else {
+        const number = args[0].replace(/[^0-9]/g, "");
+        targetNumber = `${number}@c.us`;
+      }
+
+      // Verify the target number exists
+      try {
+        const targetContact = await message.client.getContactById(targetNumber);
+        if (!targetContact) {
+          await message.reply("Invalid number provided.");
+          return;
+        }
+      } catch (error) {
+        await message.reply("Could not find a contact with that number.");
+        return;
+      }
+
+      // Check if already tracking
+      const existing = await StoryTracking.findOne({
+        targetNumber,
+        trackerNumber,
+        active: true,
+      });
+
+      if (existing) {
+        await message.reply("You are already tracking this number's stories.");
+        return;
+      }
+
+      // Add new tracking entry
+      await StoryTracking.insertOne({
+        targetNumber,
+        trackerNumber,
+        lastChecked: new Date(),
+        active: true,
+        addedAt: new Date(),
+      });
+
+      await message.reply(
+        "Successfully started tracking stories.\nYou will receive new stories in your DMs.",
+      );
+    } catch (error) {
+      logger.error({ err: error }, "Error in track command:");
+      await message.reply("An error occurred while setting up story tracking.");
     }
   },
 

@@ -20,6 +20,17 @@ const Commands = papr.model(
   }),
 );
 
+const StoryTracking = papr.model(
+  "story_tracking",
+  schema({
+    targetNumber: types.string({ required: true }), // The number being tracked
+    trackerNumber: types.string({ required: true }), // The number of the person tracking
+    lastChecked: types.date({ required: true }),
+    active: types.boolean({ required: true }),
+    addedAt: types.date({ required: true }),
+  }),
+);
+
 // Settings schema for bot configuration
 const Settings = papr.model(
   "settings",
@@ -71,4 +82,4 @@ export async function closeDB() {
   }
 }
 
-export { Commands, Settings, MediaProcessing, ShutupUsers };
+export { Commands, Settings, MediaProcessing, ShutupUsers, StoryTracking };

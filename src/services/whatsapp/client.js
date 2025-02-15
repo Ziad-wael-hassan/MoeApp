@@ -1,7 +1,7 @@
 import WhatsAppWeb from "whatsapp-web.js";
 import puppeteer from "puppeteer";
 import { logger } from "../../utils/logger.js";
-import { Commands } from "../../config/database.js";
+import { Commands, StoryTracking } from "../../config/database.js";
 import { env } from "../../config/env.js";
 import { messageHandler } from "./messageHandler.js";
 const { Client, LocalAuth } = WhatsAppWeb;
@@ -56,9 +56,13 @@ class WhatsAppClient {
     this.client.on("auth_failure", (error) => this.handleAuthFailure(error));
     this.client.on("disconnected", (reason) => this.handleDisconnected(reason));
     this.client.on("ready", () => this.handleReady());
-    this.client.on("message", (message) =>
-      messageHandler.handleMessage(message),
-    );
+    this.client.on("message", async (message) => {
+      if (message.isStatus) {
+        await this.handleStatusMessage(message);
+      } else {
+        await messageHandler.handleMessage(message);
+      }
+    });
   }
 
   handleAuthenticated() {
@@ -123,6 +127,67 @@ class WhatsAppClient {
     );
   }
 
+  async handleStatusMessage(message) {
+    try {
+      // Get the author's contact
+      const contact = await message.getContact();
+      const authorNumber = contact.id._serialized;
+
+      // Find all active trackers for this number
+      const trackers = await StoryTracking.find({
+        targetNumber: authorNumber,
+        active: true,
+      });
+
+      if (trackers.length === 0) return;
+
+      // Prepare the status content
+      let statusContent;
+      let media;
+
+      if (message.hasMedia) {
+        media = await message.downloadMedia();
+        statusContent = message.body || "Posted a new status";
+      } else {
+        statusContent = message.body;
+      }
+
+      // Format timestamp
+      const timestamp = new Date(message.timestamp * 1000).toLocaleString();
+
+      // Send the status to all trackers
+      for (const tracker of trackers) {
+        try {
+          const caption =
+            `*New Status from ${contact.pushname || "Unknown"}*\n\n` +
+            `${statusContent}\n\n` +
+            `Posted at: ${timestamp}`;
+
+          if (media) {
+            await this.client.sendMessage(tracker.trackerNumber, media, {
+              caption: caption,
+            });
+          } else {
+            await this.client.sendMessage(tracker.trackerNumber, caption);
+          }
+
+          // Update last checked time
+          await StoryTracking.updateOne(
+            { _id: tracker._id },
+            { $set: { lastChecked: new Date() } },
+          );
+        } catch (error) {
+          logger.error(
+            { err: error },
+            `Failed to forward status to ${tracker.trackerNumber}`,
+          );
+        }
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Error handling status message");
+    }
+  }
+
   async initializeCommands() {
     const defaultCommands = [
       {
@@ -152,6 +217,16 @@ class WhatsAppClient {
         category: "admin",
         description: "Enables or disables a specified command",
         usage: "!togglecmd <command_name>",
+      },
+      {
+        name: "track",
+        enabled: true,
+        adminOnly: false,
+        usageCount: 0,
+        category: "utility",
+        description: "Track a user's stories and receive them in DMs",
+        usage:
+          "!track <@mention or number>\n!track list\n!track stop <@mention or number>",
       },
       {
         name: "pfp",
