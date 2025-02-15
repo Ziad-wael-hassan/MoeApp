@@ -67,6 +67,16 @@ function extractUrl(messageBody) {
   return null;
 }
 
+// Determine media type from URL
+function getMediaType(url) {
+  if (!url) return null;
+
+  for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
+    if (pattern.test(url)) return platform.toLowerCase();
+  }
+  return null;
+}
+
 // Download media
 async function downloadMedia(url) {
   if (!url) throw new Error("Invalid media URL");
@@ -115,12 +125,7 @@ async function sendMedia(url, message) {
           `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
         );
 
-        const media = new MessageMedia(
-          mimeType,
-          base64,
-          mediaData.filename || undefined,
-        );
-
+        const media = new MessageMedia(mimeType, base64);
         await message.reply(media);
       }
     }
