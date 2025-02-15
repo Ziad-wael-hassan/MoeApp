@@ -77,19 +77,19 @@ function getMediaType(url) {
 }
 
 async function validateMedia(mediaData) {
-    if (!mediaData) {
-        throw new Error("Invalid media data received");
-    }
+  if (!mediaData) {
+    throw new Error("Invalid media data received");
+  }
 
-    if (mediaData.status === "error" || mediaData.error) {
-        throw new Error(mediaData.error || "Unknown error in media data");
-    }
+  if (mediaData.status === "error" || mediaData.error) {
+    throw new Error(mediaData.error || "Unknown error in media data");
+  }
 
-    if (!mediaData.url && (!mediaData.picker || !mediaData.picker.length)) {
-        throw new Error("No valid media URL found in response");
-    }
+  if (!mediaData.url && (!mediaData.picker || !mediaData.picker.length)) {
+    throw new Error("No valid media URL found in response");
+  }
 
-    return true;
+  return true;
 }
 
 function sanitizeUrl(url) {
@@ -124,6 +124,11 @@ async function downloadMedia(url, retryCount = 0) {
     const response = await axiosInstance.get(sanitizedUrl, {
       responseType: "arraybuffer",
       timeout: PROCESSING_TIMEOUT,
+      maxRedirects: 5,
+      headers: {
+        Accept: "*/*",
+        "Accept-Encoding": "gzip, deflate, br",
+      },
       validateStatus: (status) => status === 200, // Only accept 200 status
     });
 
