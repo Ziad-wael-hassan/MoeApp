@@ -76,6 +76,22 @@ function getMediaType(url) {
   return null;
 }
 
+async function validateMedia(mediaData) {
+    if (!mediaData) {
+        throw new Error("Invalid media data received");
+    }
+
+    if (mediaData.status === "error" || mediaData.error) {
+        throw new Error(mediaData.error || "Unknown error in media data");
+    }
+
+    if (!mediaData.url && (!mediaData.picker || !mediaData.picker.length)) {
+        throw new Error("No valid media URL found in response");
+    }
+
+    return true;
+}
+
 function sanitizeUrl(url) {
   try {
     if (!url) return null;
