@@ -606,9 +606,16 @@ export const commandHandlers = {
   },
 
   async img(message, args) {
-    // Cache management
-    const sentImages = new Map();
-    const MAX_CACHE_SIZE = 1000;
+    // Set for storing sent image URLs with hourly cleanup
+    const sentImages = new Set();
+    // Set up the cleanup interval
+    setInterval(
+      () => {
+        sentImages.clear();
+      },
+      60 * 60 * 1000,
+    ); // Clear every hour
+
     const MAX_RETRIES = 3;
 
     // Helper function to extract image count
@@ -632,7 +639,6 @@ export const commandHandlers = {
           timeout: 5000,
           validateStatus: (status) => status === 200,
         });
-
         return response.headers["content-type"]?.startsWith("image/");
       } catch (error) {
         if (retryCount < MAX_RETRIES) {
@@ -644,30 +650,21 @@ export const commandHandlers = {
     };
 
     // Helper function to get unique images
-    const getUniqueImages = async (query, count, results) => {
-      const currentTime = Date.now();
-      const sentImagesData = sentImages.get(query) || {
-        urls: new Set(),
-        timestamp: currentTime,
-      };
-
+    const getUniqueImages = async (count, results) => {
       const uniqueImages = [];
-      const seenUrls = new Set();
 
       for (const result of results) {
         if (uniqueImages.length >= count) break;
 
-        if (seenUrls.has(result.url) || sentImagesData.urls.has(result.url)) {
+        if (sentImages.has(result.url)) {
           continue;
         }
-
-        seenUrls.add(result.url);
 
         try {
           const isValid = await isValidImageUrl(result.url);
           if (isValid) {
             uniqueImages.push(result);
-            sentImagesData.urls.add(result.url);
+            sentImages.add(result.url);
           }
         } catch (error) {
           console.error(
@@ -677,16 +674,6 @@ export const commandHandlers = {
           continue;
         }
       }
-
-      // Manage cache size
-      if (sentImages.size > MAX_CACHE_SIZE) {
-        const entries = Array.from(sentImages.entries());
-        entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
-        sentImages = new Map(entries.slice(0, MAX_CACHE_SIZE / 2));
-      }
-
-      sentImagesData.timestamp = currentTime;
-      sentImages.set(query, sentImagesData);
 
       return uniqueImages;
     };
@@ -750,7 +737,7 @@ export const commandHandlers = {
       }
 
       // Get unique images
-      const uniqueImages = await getUniqueImages(query, count, results);
+      const uniqueImages = await getUniqueImages(count, results);
 
       if (uniqueImages.length === 0) {
         await message.reply("No unique images found.");
