@@ -11,7 +11,7 @@ const CONSTANTS = {
   PROCESSING_TIMEOUT: 60000, // 60 seconds
   MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB
   COBALT_URL: "https://nuclear-ashien-cobalto-d51291d3.koyeb.app/",
-  DEFAULT_MIME_TYPE: "application/octet-stream"
+  DEFAULT_MIME_TYPE: "application/octet-stream",
 };
 
 // Error messages
@@ -22,7 +22,7 @@ const ERROR_MESSAGES = {
   TIMEOUT: "Request timed out. Please try again.",
   NETWORK_ERROR: "Network error occurred. Please check your connection.",
   UNSUPPORTED_PLATFORM: "This platform is not supported.",
-  PROCESSING_ERROR: "Error processing media. Please try again."
+  PROCESSING_ERROR: "Error processing media. Please try again.",
 };
 
 // Utility function to create axios instance with default config
@@ -31,7 +31,8 @@ const createAxiosInstance = () => {
     timeout: CONSTANTS.PROCESSING_TIMEOUT,
     maxRedirects: 10,
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
       Accept: "image/*, video/*",
       "Accept-Language": "en-US,en;q=0.9",
       "Accept-Encoding": "gzip, deflate, br",
@@ -58,7 +59,7 @@ const isValidUrl = (url) => {
 // Utility function to format error message for user
 const formatUserError = (error) => {
   if (axios.isAxiosError(error)) {
-    if (error.code === 'ECONNABORTED') return ERROR_MESSAGES.TIMEOUT;
+    if (error.code === "ECONNABORTED") return ERROR_MESSAGES.TIMEOUT;
     if (error.response?.status === 413) return ERROR_MESSAGES.FILE_TOO_LARGE;
     if (!error.response) return ERROR_MESSAGES.NETWORK_ERROR;
   }
@@ -67,7 +68,7 @@ const formatUserError = (error) => {
 
 // Utility function to check file size from headers
 const checkFileSize = (headers) => {
-  const contentLength = parseInt(headers['content-length']);
+  const contentLength = parseInt(headers["content-length"]);
   if (contentLength > CONSTANTS.MAX_FILE_SIZE) {
     throw new Error(ERROR_MESSAGES.FILE_TOO_LARGE);
   }
@@ -141,7 +142,8 @@ async function downloadMedia(url) {
 
     const buffer = Buffer.from(response.data);
     const base64 = buffer.toString("base64");
-    const mimeType = response.headers["content-type"] || CONSTANTS.DEFAULT_MIME_TYPE;
+    const mimeType =
+      response.headers["content-type"] || CONSTANTS.DEFAULT_MIME_TYPE;
 
     return { base64, mimeType };
   } catch (error) {
@@ -151,7 +153,8 @@ async function downloadMedia(url) {
 }
 
 async function sendMedia(url, message) {
-  if (!url || !message) return { success: false, error: ERROR_MESSAGES.INVALID_URL };
+  if (!url || !message)
+    return { success: false, error: ERROR_MESSAGES.INVALID_URL };
 
   try {
     const mediaData = await extractMediaWithCobalt(url);
@@ -166,7 +169,9 @@ async function sendMedia(url, message) {
         }
       }
     } else {
-      const mediaUrls = Array.isArray(mediaData.url) ? mediaData.url : [mediaData.url];
+      const mediaUrls = Array.isArray(mediaData.url)
+        ? mediaData.url
+        : [mediaData.url];
       for (const mediaUrl of mediaUrls) {
         const { base64, mimeType } = await downloadMedia(mediaUrl);
         const media = new MessageMedia(mimeType, base64);
@@ -187,17 +192,17 @@ export async function handleMediaExtraction(message) {
   try {
     const url = extractUrl(message.body);
     if (!url) {
-      return { 
-        processed: false, 
-        error: ERROR_MESSAGES.INVALID_URL 
+      return {
+        processed: false,
+        error: ERROR_MESSAGES.INVALID_URL,
       };
     }
 
     const mediaType = getMediaType(url);
     if (!mediaType) {
-      return { 
-        processed: false, 
-        error: ERROR_MESSAGES.UNSUPPORTED_PLATFORM 
+      return {
+        processed: false,
+        error: ERROR_MESSAGES.UNSUPPORTED_PLATFORM,
       };
     }
 
@@ -205,7 +210,7 @@ export async function handleMediaExtraction(message) {
     await chat.sendStateTyping();
 
     const result = await sendMedia(url, message);
-    
+
     if (!result.success) {
       await message.reply(result.error);
       return { processed: false, error: result.error };
@@ -214,7 +219,7 @@ export async function handleMediaExtraction(message) {
     return {
       processed: true,
       url,
-      mediaType
+      mediaType,
     };
   } catch (error) {
     logger.error("Error in handling media:", error);

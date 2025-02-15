@@ -10,6 +10,12 @@ import { scheduleReminder } from "../../../utils/scheduler.js";
 const { MessageMedia } = WhatsAppWeb;
 
 const SONG_SELECTION_TIMEOUT = 60000; // 60 seconds timeout for selection
+const sentImageCache = new Map();
+const IMAGE_CACHE_CONFIG = {
+  MAX_SIZE: 1000,
+  MAX_RETRIES: 3,
+  EXPIRY: 24 * 60 * 60 * 1000, // 24 hours in milliseconds
+};
 
 function formatSearchResults(results) {
   let message = "*🎵 Found these songs:*\n\n";
@@ -606,17 +612,15 @@ export const commandHandlers = {
   },
 
   async img(message, args) {
-    // Set for storing sent image URLs with hourly cleanup
-    const sentImages = new Set();
-    // Set up the cleanup interval
-    setInterval(
-      () => {
-        sentImages.clear();
-      },
-      60 * 60 * 1000,
-    ); // Clear every hour
-
-    const MAX_RETRIES = 3;
+    // Helper function to clean expired cache entries
+    const cleanExpiredCache = () => {
+      const currentTime = Date.now();
+      for (const [query, data] of sentImageCache.entries()) {
+        if (currentTime - data.timestamp > IMAGE_CACHE_CONFIG.EXPIRY) {
+          sentImageCache.delete(query);
+        }
+      }
+    };
 
     // Helper function to extract image count
     const extractImageCount = (message) => {
@@ -639,9 +643,10 @@ export const commandHandlers = {
           timeout: 5000,
           validateStatus: (status) => status === 200,
         });
+
         return response.headers["content-type"]?.startsWith("image/");
       } catch (error) {
-        if (retryCount < MAX_RETRIES) {
+        if (retryCount < IMAGE_CACHE_CONFIG.MAX_RETRIES) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
           return isValidImageUrl(url, retryCount + 1);
         }
@@ -650,30 +655,62 @@ export const commandHandlers = {
     };
 
     // Helper function to get unique images
-    const getUniqueImages = async (count, results) => {
-      const uniqueImages = [];
+    const getUniqueImages = async (query, count, results) => {
+      const currentTime = Date.now();
 
-      for (const result of results) {
+      // Clean expired cache entries
+      cleanExpiredCache();
+
+      // Get or create cache entry for this query
+      const cacheEntry = sentImageCache.get(query) || {
+        urls: new Set(),
+        timestamp: currentTime,
+      };
+
+      const uniqueImages = [];
+      const seenUrls = new Set();
+
+      // Shuffle the results array to get random images
+      const shuffledResults = results.sort(() => Math.random() - 0.5);
+
+      for (const result of shuffledResults) {
         if (uniqueImages.length >= count) break;
 
-        if (sentImages.has(result.url)) {
+        const url = result.url;
+
+        // Skip if URL was seen in this session or exists in cache
+        if (seenUrls.has(url) || cacheEntry.urls.has(url)) {
           continue;
         }
 
+        seenUrls.add(url);
+
         try {
-          const isValid = await isValidImageUrl(result.url);
+          const isValid = await isValidImageUrl(url);
           if (isValid) {
             uniqueImages.push(result);
-            sentImages.add(result.url);
+            cacheEntry.urls.add(url);
           }
         } catch (error) {
-          console.error(
-            `Error validating image URL ${result.url}:`,
-            error.message,
-          );
+          logger.error(`Error validating image URL ${url}:`, error.message);
           continue;
         }
       }
+
+      // Update cache timestamp
+      cacheEntry.timestamp = currentTime;
+
+      // Manage cache size
+      if (cacheEntry.urls.size > IMAGE_CACHE_CONFIG.MAX_SIZE) {
+        // Convert to array, sort by age, and keep newest half
+        const urlArray = Array.from(cacheEntry.urls);
+        cacheEntry.urls = new Set(
+          urlArray.slice(-IMAGE_CACHE_CONFIG.MAX_SIZE / 2),
+        );
+      }
+
+      // Update cache
+      sentImageCache.set(query, cacheEntry);
 
       return uniqueImages;
     };
@@ -683,7 +720,7 @@ export const commandHandlers = {
       return Promise.all(
         images.map(async (image) => {
           let retryCount = 0;
-          while (retryCount < MAX_RETRIES) {
+          while (retryCount < IMAGE_CACHE_CONFIG.MAX_RETRIES) {
             try {
               const response = await axios.get(image.url, {
                 responseType: "arraybuffer",
@@ -703,9 +740,9 @@ export const commandHandlers = {
               );
             } catch (error) {
               retryCount++;
-              if (retryCount >= MAX_RETRIES) {
+              if (retryCount >= IMAGE_CACHE_CONFIG.MAX_RETRIES) {
                 console.error(
-                  `Failed to fetch image after ${MAX_RETRIES} attempts:`,
+                  `Failed to fetch image after ${IMAGE_CACHE_CONFIG.MAX_RETRIES} attempts:`,
                   error.message,
                 );
                 throw error;
@@ -717,18 +754,13 @@ export const commandHandlers = {
       );
     };
 
-    // Main image search and send logic
     try {
-      // Check if a query is provided
       if (args.length === 0) {
         await message.reply("Please provide a search query.");
         return;
       }
 
-      // Extract query and image count
       const { count, query } = extractImageCount(args.join(" "));
-
-      // Perform Google Image Search
       const results = await gis(query);
 
       if (!results || results.length === 0) {
@@ -736,11 +768,12 @@ export const commandHandlers = {
         return;
       }
 
-      // Get unique images
-      const uniqueImages = await getUniqueImages(count, results);
+      const uniqueImages = await getUniqueImages(query, count, results);
 
       if (uniqueImages.length === 0) {
-        await message.reply("No unique images found.");
+        await message.reply(
+          "No new unique images found. Try a different search term.",
+        );
         return;
       }
 
