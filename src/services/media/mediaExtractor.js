@@ -207,7 +207,9 @@ async function sendMedia(url, message) {
         // First attempt: Try with axios and base64
         try {
           const { base64, mimeType } = await downloadMedia(sanitizedUrl);
-          const media = new MessageMedia(mimeType, base64, "media");
+          console.log("base64", base64);
+          console.log("mimeType", mimeType);
+          const media = new MessageMedia(mimeType, base64);
           await sendMediaWithRetry(media, message);
           successCount++;
         } catch (base64Error) {
@@ -218,8 +220,6 @@ async function sendMedia(url, message) {
           // Second attempt: Try with MessageMedia.fromUrl
           const media = await MessageMedia.fromUrl(sanitizedUrl, {
             unsafeMime: true,
-            client: message.client,
-            timeout: PROCESSING_TIMEOUT,
           });
           await sendMediaWithRetry(media, message);
           successCount++;
