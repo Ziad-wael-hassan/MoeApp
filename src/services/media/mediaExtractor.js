@@ -213,37 +213,56 @@ async function sendMedia(url, message) {
       throw new Error(`Too many media items (${mediaUrls.length}). Maximum allowed is 5.`);
     }
 
+    let successCount = 0;
+    let lastError = null;
+
     for (const mediaUrl of mediaUrls) {
-      // Queue the download task
-      const mediaContent = await downloadQueue.enqueue(async () => {
-        return downloadMedia(mediaUrl);
-      });
-      
-      const { base64, mimeType } = mediaContent;
-      logger.debug(
-        `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
-      );
-
-      // Check file size after base64 encoding
-      if (base64.length > MAX_FILE_SIZE * 1.37) { // Account for base64 encoding overhead
-        throw new Error(`Encoded media size (${base64.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`);
-      }
-
-      const media = new MessageMedia(mimeType, base64);
-      
-      // Queue the sending task
-      await sendingQueue.enqueue(async () => {
-        try {
-          await message.reply(media);
-          logger.info(`Successfully sent media for URL: ${mediaUrl}`);
-        } catch (error) {
-          logger.error(`Failed to send media for URL ${mediaUrl}: ${error.message}`);
-          throw error;
+      try {
+        // Queue the download task - FIX: Properly await and handle errors
+        const mediaContent = await downloadQueue.enqueue(() => downloadMedia(mediaUrl));
+        
+        // FIX: Verify mediaContent is defined before destructuring
+        if (!mediaContent) {
+          throw new Error(`Failed to download media from URL: ${mediaUrl}`);
         }
-      });
+        
+        const { base64, mimeType } = mediaContent;
+        logger.debug(
+          `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
+        );
+
+        // Check file size after base64 encoding
+        if (base64.length > MAX_FILE_SIZE * 1.37) { // Account for base64 encoding overhead
+          throw new Error(`Encoded media size (${base64.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`);
+        }
+
+        const media = new MessageMedia(mimeType, base64);
+        
+        // Queue the sending task
+        await sendingQueue.enqueue(async () => {
+          try {
+            await message.reply(media);
+            logger.info(`Successfully sent media for URL: ${mediaUrl}`);
+            successCount++;
+          } catch (error) {
+            logger.error(`Failed to send media for URL ${mediaUrl}: ${error.message}`);
+            throw error;
+          }
+        });
+      } catch (error) {
+        logger.error(`Failed to process media URL ${mediaUrl}:`, error);
+        lastError = error;
+        // Continue with other URLs even if one fails
+      }
     }
 
-    return { success: true };
+    // If at least one media was sent successfully, consider it a success
+    if (successCount > 0) {
+      return { success: true, partialSuccess: successCount < mediaUrls.length };
+    } else {
+      throw lastError || new Error("Failed to process all media items");
+    }
+
   } catch (error) {
     logger.error("Error in processing media:", error);
     
@@ -305,14 +324,19 @@ export async function handleMediaExtraction(message) {
 
     // Handle user notification for specific errors
     if (!result.success && result.shouldNotify) {
-      await message.reply(`Sorry, I couldn't process that media: ${result.reason}. ${result.details || ''}`);
+      try {
+        await message.reply(`Sorry, I couldn't process that media: ${result.reason}. ${result.details || ''}`);
+      } catch (notifyError) {
+        logger.error("Failed to send error notification:", notifyError);
+      }
     }
 
     return {
       processed: result.success,
       mediaType,
       url,
-      ...(!result.success && { error: result.reason, details: result.details })
+      ...(!result.success && { error: result.reason, details: result.details }),
+      ...(result.partialSuccess && { partialSuccess: true })
     };
   } catch (error) {
     logger.error("Error in handling media extraction:", error);
