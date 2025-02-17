@@ -37,11 +37,18 @@ const axiosInstance = axios.create({
   maxRedirects: 10,
   headers: {
     "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    Accept: "image/*, video/*",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
+    Accept: "*/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     Connection: "keep-alive",
+    Referer: "https://www.tiktok.com/",
+    "Sec-Fetch-Dest": "video",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Ch-Ua": '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
   },
   validateStatus: (status) => status >= 200 && status < 300,
   maxContentLength: 50 * 1024 * 1024, // 50MB max
@@ -66,7 +73,32 @@ function getMediaType(url) {
   for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
     if (pattern.test(url)) return platform.toLowerCase();
   }
+  
+  // Special case for akamaized.net URLs which are typically TikTok CDN URLs
+  if (url.includes('akamaized.net') && url.includes('video/tos')) {
+    return 'tiktok';
+  }
+  
   return null;
+}
+
+// Get specialized headers for specific domains
+function getSpecializedHeaders(url) {
+  const headers = { ...axiosInstance.defaults.headers };
+  
+  // TikTok CDN URLs
+  if (url.includes('akamaized.net') || url.includes('tiktokcdn') || url.includes('tiktok.com')) {
+    headers["Referer"] = "https://www.tiktok.com/";
+    headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36";
+  }
+  
+  // Instagram CDN URLs
+  if (url.includes('cdninstagram.com') || url.includes('instagram.com')) {
+    headers["Referer"] = "https://www.instagram.com/";
+    headers["User-Agent"] = "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1";
+  }
+  
+  return headers;
 }
 
 // Download media with retry mechanism
@@ -76,15 +108,23 @@ async function downloadMedia(url, retryCount = 3) {
   let lastError;
   for (let attempt = 1; attempt <= retryCount; attempt++) {
     try {
+      // Get specialized headers for this URL
+      const headers = getSpecializedHeaders(url);
+      
       const response = await axiosInstance.get(url, {
         responseType: "arraybuffer",
         timeout: PROCESSING_TIMEOUT,
+        headers,
         onDownloadProgress: (progressEvent) => {
           if (progressEvent.total && progressEvent.total > MAX_FILE_SIZE) {
             throw new Error(`File size exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`);
           }
         }
       });
+
+      if (!response.data || response.data.length === 0) {
+        throw new Error("Empty response received from server");
+      }
 
       const buffer = Buffer.from(response.data);
       
@@ -93,12 +133,31 @@ async function downloadMedia(url, retryCount = 3) {
         throw new Error(`Downloaded file size (${buffer.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`);
       }
       
+      // For debugging content types
+      logger.debug(`Downloaded media content type: ${response.headers['content-type']} from URL: ${url.substring(0, 100)}...`);
+      
       const base64 = buffer.toString("base64");
       const mimeType = response.headers["content-type"] || "application/octet-stream";
 
       return { base64, mimeType };
     } catch (error) {
+      const errorDetails = error.response ? {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        headers: error.response.headers,
+        data: error.response.data ? 
+              (error.response.data instanceof Buffer ? 
+               `Binary data of length ${error.response.data.length}` : 
+               JSON.stringify(error.response.data).substring(0, 200))
+              : 'No data'
+      } : null;
+      
       lastError = error;
+      
+      logger.error(`Download attempt ${attempt} failed for URL: ${url.substring(0, 100)}...`, {
+        error: error.message,
+        responseDetails: errorDetails
+      });
       
       // Don't retry if it's a file size error
       if (error.message.includes("File size exceeds")) {
@@ -106,7 +165,7 @@ async function downloadMedia(url, retryCount = 3) {
       }
       
       if (attempt < retryCount) {
-        logger.warn(`Download attempt ${attempt} failed for ${url}. Retrying...`, error);
+        logger.warn(`Retrying download attempt ${attempt} for URL: ${url.substring(0, 100)}...`);
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
       }
     }
@@ -119,6 +178,11 @@ async function downloadMedia(url, retryCount = 3) {
 async function extractMediaUrl(url, mediaType) {
   if (!url || !mediaType) {
     throw new Error("Invalid URL or media type");
+  }
+
+  // If this is already a CDN URL, return it directly
+  if (url.includes('akamaized.net') || url.includes('tiktokcdn.com')) {
+    return { url };
   }
 
   const extractors = {
@@ -170,12 +234,22 @@ async function sendMedia(url, message) {
     const mediaType = getMediaType(url);
     if (!mediaType) return { success: false, reason: "Unsupported media type" };
 
-    logger.info(`Processing ${mediaType} URL: ${url}`);
+    logger.info(`Processing ${mediaType} URL: ${url.substring(0, 100)}...`);
     
-    // Queue the extraction task
-    const mediaData = await extractMediaUrl(url, mediaType);
+    // CDN URL handling - skip extraction if it's already a CDN URL
+    let mediaData;
+    if (url.includes('akamaized.net') || url.includes('tiktokcdn.com')) {
+      mediaData = { url };
+    } else {
+      // Queue the extraction task 
+      mediaData = await extractMediaUrl(url, mediaType);
+    }
 
-    logger.debug(`Extracted media data for ${mediaType}: ${JSON.stringify(mediaData)}`);
+    logger.debug(`Extracted media data for ${mediaType}: ${JSON.stringify(
+      typeof mediaData === 'object' ? 
+        { ...mediaData, url: mediaData.url ? mediaData.url.substring(0, 100) + '...' : undefined } : 
+        mediaData
+    )}`);
 
     if (mediaType === "soundcloud" && mediaData.buffer) {
       // Validate buffer before sending
@@ -190,7 +264,7 @@ async function sendMedia(url, message) {
         await sendingQueue.enqueue(async () => {
           try {
             await message.reply(media);
-            logger.info(`Successfully sent SoundCloud audio for URL: ${url}`);
+            logger.info(`Successfully sent SoundCloud audio for URL: ${url.substring(0, 100)}...`);
           } catch (error) {
             logger.error(`Failed to send SoundCloud media: ${error.message}`);
             throw error;
@@ -223,12 +297,12 @@ async function sendMedia(url, message) {
         
         // FIX: Verify mediaContent is defined before destructuring
         if (!mediaContent) {
-          throw new Error(`Failed to download media from URL: ${mediaUrl}`);
+          throw new Error(`Failed to download media from URL: ${mediaUrl.substring(0, 100)}...`);
         }
         
         const { base64, mimeType } = mediaContent;
         logger.debug(
-          `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
+          `Downloaded media - URL: ${mediaUrl.substring(0, 100)}..., MIME type: ${mimeType}, size: ${base64.length} bytes`,
         );
 
         // Check file size after base64 encoding
@@ -242,15 +316,15 @@ async function sendMedia(url, message) {
         await sendingQueue.enqueue(async () => {
           try {
             await message.reply(media);
-            logger.info(`Successfully sent media for URL: ${mediaUrl}`);
+            logger.info(`Successfully sent media for URL: ${mediaUrl.substring(0, 100)}...`);
             successCount++;
           } catch (error) {
-            logger.error(`Failed to send media for URL ${mediaUrl}: ${error.message}`);
+            logger.error(`Failed to send media for URL ${mediaUrl.substring(0, 100)}...: ${error.message}`);
             throw error;
           }
         });
       } catch (error) {
-        logger.error(`Failed to process media URL ${mediaUrl}:`, error);
+        logger.error(`Failed to process media URL ${mediaUrl.substring(0, 100)}...:`, error);
         lastError = error;
         // Continue with other URLs even if one fails
       }
