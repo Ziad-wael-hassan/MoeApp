@@ -1,4 +1,3 @@
-// mediaExtractor.js
 import { logger } from "../../utils/logger.js";
 import WhatsAppWeb from "whatsapp-web.js";
 import axios from "axios";
@@ -12,587 +11,196 @@ import {
 import Queue from "queue-promise";
 
 const { MessageMedia } = WhatsAppWeb;
-const PROCESSING_TIMEOUT = 60000; // 60 seconds
-const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30 MB
+const CONFIG = {
+  TIMEOUT: 60000,
+  MAX_FILE_SIZE: 30 * 1024 * 1024,
+  MAX_RETRIES: 3,
+  MAX_MEDIA_ITEMS: 5,
+};
 
-// Processing queues to manage concurrent operations
-const extractionQueue = new Queue({
-  concurrent: 3,
-  interval: 500,
-});
+const queues = {
+  extraction: new Queue({ concurrent: 3, interval: 500 }),
+  download: new Queue({ concurrent: 5, interval: 500 }),
+  sending: new Queue({ concurrent: 2, interval: 1000 }),
+};
 
-const downloadQueue = new Queue({
-  concurrent: 5,
-  interval: 500,
-});
-
-const sendingQueue = new Queue({
-  concurrent: 2,
-  interval: 1000,
-});
-
-// Configure axios instance
-const axiosInstance = axios.create({
-  timeout: 30000,
-  maxRedirects: 10,
-  headers: {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
-    Accept: "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-    Connection: "keep-alive",
+const utils = {
+  truncateUrl: (url) => (url ? `${url.substring(0, 50)}...` : "undefined"),
+  createTxId: () => Date.now().toString(36),
+  getMediaType: (url) => {
+    if (!url) return null;
+    for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
+      if (pattern.test(url)) return platform.toLowerCase();
+    }
+    return url.includes("akamaized.net") && url.includes("video/tos")
+      ? "tiktok"
+      : null;
   },
+  getHeaders: (url) => {
+    const baseHeaders = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "*/*",
+      Connection: "keep-alive",
+    };
+
+    if (url.includes("tiktok") || url.includes("akamaized.net")) {
+      return {
+        ...baseHeaders,
+        Referer: "https://www.tiktok.com/",
+        Origin: "https://www.tiktok.com",
+      };
+    }
+    if (url.includes("instagram")) {
+      return {
+        ...baseHeaders,
+        Referer: "https://www.instagram.com/",
+        Origin: "https://www.instagram.com",
+      };
+    }
+    return baseHeaders;
+  },
+};
+
+const axiosInstance = axios.create({
+  timeout: CONFIG.TIMEOUT,
+  maxRedirects: 10,
   validateStatus: (status) => status >= 200 && status < 300,
-  maxContentLength: 50 * 1024 * 1024, // 50MB max
-  maxBodyLength: 50 * 1024 * 1024, // 50MB max
+  maxContentLength: CONFIG.MAX_FILE_SIZE,
+  maxBodyLength: CONFIG.MAX_FILE_SIZE,
 });
 
-// Extract URLs from message
-function extractUrl(messageBody) {
-  if (!messageBody) return null;
-
-  for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
-    const match = messageBody.match(pattern);
-    if (match && match[0]) return match[0];
-  }
-  return null;
-}
-
-// Determine media type from URL
-function getMediaType(url) {
-  if (!url) return null;
-
-  for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
-    if (pattern.test(url)) return platform.toLowerCase();
-  }
-
-  // Special case for akamaized.net URLs which are typically TikTok CDN URLs
-  if (url.includes("akamaized.net") && url.includes("video/tos")) {
-    return "tiktok";
-  }
-
-  return null;
-}
-
-// Get specialized headers for specific domains
-function getSpecializedHeaders(url) {
-  const headers = { ...axiosInstance.defaults.headers };
-
-  // TikTok CDN URLs
-  if (
-    url.includes("akamaized.net") ||
-    url.includes("tiktokcdn") ||
-    url.includes("tiktok.com")
-  ) {
-    headers["Referer"] = "https://www.tiktok.com/";
-    headers["User-Agent"] =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36";
-  }
-
-  // Instagram CDN URLs
-  if (url.includes("cdninstagram.com") || url.includes("instagram.com")) {
-    headers["Referer"] = "https://www.instagram.com/";
-    headers["User-Agent"] =
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1";
-  }
-
-  return headers;
-}
-
-// Add these modifications to the downloadMedia function:
-
-async function downloadMedia(url, retryCount = 3) {
+async function downloadMedia(url, txId) {
   if (!url) throw new Error("Invalid media URL");
 
-  let lastError;
-  for (let attempt = 1; attempt <= retryCount; attempt++) {
+  for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES; attempt++) {
     try {
-      // Get specialized headers for this URL
-      const headers = getSpecializedHeaders(url);
-      
-      logger.debug(`Download attempt ${attempt} starting for URL: ${url.substring(0, 100)}...`, {
-        headers: headers,
-        attempt: attempt,
-        maxRetries: retryCount
+      logger.debug(`[TX:${txId}] Download attempt ${attempt}`, {
+        url: utils.truncateUrl(url),
       });
 
       const response = await axiosInstance.get(url, {
         responseType: "arraybuffer",
-        timeout: PROCESSING_TIMEOUT,
-        headers,
-        validateStatus: false, // Allow non-2xx responses to be handled
-        onDownloadProgress: (progressEvent) => {
-          if (progressEvent.total && progressEvent.total > MAX_FILE_SIZE) {
-            const error = new Error(`File size exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`);
-            error.code = 'FILE_TOO_LARGE';
-            throw error;
-          }
-          
-          // Log download progress every 25%
-          if (progressEvent.total) {
-            const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-            if (percent % 25 === 0) {
-              logger.debug(`Download progress: ${percent}% (${progressEvent.loaded}/${progressEvent.total} bytes)`);
-            }
+        headers: utils.getHeaders(url),
+        onDownloadProgress: (e) => {
+          if (e.total > CONFIG.MAX_FILE_SIZE) {
+            throw Object.assign(new Error("File too large"), {
+              code: "FILE_TOO_LARGE",
+            });
           }
         },
       });
 
-      // Log detailed response information
-      logger.debug('Download response received', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        contentLength: response.headers['content-length'],
-        contentType: response.headers['content-type'],
-        dataLength: response.data?.length
-      });
-
-      if (response.status !== 200) {
-        throw new Error(`HTTP ${response.status} - ${response.statusText || 'No status text provided'}`);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error("Empty response received from server");
-      }
+      if (!response.data?.length) throw new Error("Empty response");
 
       const buffer = Buffer.from(response.data);
-      
-      logger.debug('Buffer created from response', {
-        bufferLength: buffer.length,
-        isBuffer: Buffer.isBuffer(buffer),
-        contentType: response.headers['content-type']
-      });
-
-      // Check file size after download
-      if (buffer.length > MAX_FILE_SIZE) {
-        const error = new Error(
-          `Downloaded file size (${buffer.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`
-        );
-        error.code = 'FILE_TOO_LARGE';
-        throw error;
-      }
-
-      const base64 = buffer.toString("base64");
-      const mimeType = response.headers["content-type"] || "application/octet-stream";
-
-      logger.info('Media download completed successfully', {
-        mimeType,
-        finalSize: buffer.length,
-        attempt
-      });
-
-      return { base64, mimeType };
-
-    } catch (error) {
-      const errorDetails = {
-        message: error.message,
-        code: error.code,
-        name: error.name,
-        attempt,
-        url: url.substring(0, 100)
-      };
-
-      if (error.response) {
-        errorDetails.response = {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          headers: error.response.headers,
-          data: error.response.data instanceof Buffer 
-            ? `Binary data of length ${error.response.data.length}`
-            : (typeof error.response.data === 'string' 
-              ? error.response.data.substring(0, 200) 
-              : JSON.stringify(error.response.data).substring(0, 200))
-        };
-      }
-
-      if (error.request) {
-        errorDetails.request = {
-          method: error.request.method,
-          path: error.request.path,
-          headers: error.request.getHeaders?.() || {},
-          timings: error.request.timings
-        };
-      }
-
-      if (error.code === 'ECONNABORTED') {
-        errorDetails.timeoutConfig = {
-          timeout: PROCESSING_TIMEOUT,
-          maxFileSize: MAX_FILE_SIZE
-        };
-      }
-
-      logger.error('Download attempt failed', errorDetails);
-
-      lastError = error;
-
-      // Don't retry if it's a file size error
-      if (error.code === 'FILE_TOO_LARGE') {
-        throw error;
-      }
-
-      if (attempt < retryCount) {
-        const backoffTime = 1000 * attempt;
-        logger.info(`Retrying download after ${backoffTime}ms delay`, {
-          attempt,
-          nextAttempt: attempt + 1,
-          backoffTime
+      if (buffer.length > CONFIG.MAX_FILE_SIZE) {
+        throw Object.assign(new Error("File too large"), {
+          code: "FILE_TOO_LARGE",
         });
-        await new Promise((resolve) => setTimeout(resolve, backoffTime));
       }
+
+      return {
+        base64: buffer.toString("base64"),
+        mimeType:
+          response.headers["content-type"] || "application/octet-stream",
+      };
+    } catch (error) {
+      logger.error(`[TX:${txId}] Download failed`, {
+        attempt,
+        error: error.message,
+        status: error.response?.status,
+      });
+
+      if (error.code === "FILE_TOO_LARGE" || attempt === CONFIG.MAX_RETRIES)
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
     }
   }
-
-  // Log final error before giving up
-  logger.error('All download attempts failed', {
-    totalAttempts: retryCount,
-    finalError: {
-      message: lastError.message,
-      code: lastError.code,
-      name: lastError.name
-    }
-  });
-
-  throw lastError || new Error(`Failed to download media after ${retryCount} attempts`);
-}
-// Extract media URL based on platform
-async function extractMediaUrl(url, mediaType) {
-  if (!url || !mediaType) {
-    throw new Error("Invalid URL or media type");
-  }
-
-  // If this is already a CDN URL, return it directly
-  if (url.includes("akamaized.net") || url.includes("tiktokcdn.com")) {
-    return { url };
-  }
-
-  const extractors = {
-    instagram: extractInstagramMedia,
-    tiktok: extractTikTokMedia,
-    facebook: extractFacebookMedia,
-    soundcloud: extractSoundCloudMedia,
-  };
-
-  const extractor = extractors[mediaType];
-  if (!extractor) {
-    throw new Error(`No extractor available for media type: ${mediaType}`);
-  }
-
-  return new Promise((resolve, reject) => {
-    // Add to extraction queue
-    extractionQueue.enqueue(async () => {
-      try {
-        const extractPromise = extractor(url);
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `Media extraction timed out for ${mediaType} URL: ${url}`,
-                ),
-              ),
-            PROCESSING_TIMEOUT,
-          ),
-        );
-
-        // Wait for either the extraction or timeout
-        const mediaData = await Promise.race([extractPromise, timeoutPromise]);
-
-        if (mediaData.buffer) {
-          // If the extractor returns a buffer, pass it as-is
-          resolve(mediaData); // { buffer, mimeType }
-        } else {
-          // Otherwise, assume it's a URL
-          resolve({ url: mediaData });
-        }
-      } catch (error) {
-        logger.error(
-          `Media extraction failed for ${mediaType} URL: ${url}`,
-          error,
-        );
-        reject(error);
-      }
-    });
-  });
 }
 
 async function sendMedia(url, message) {
-  if (!url || !message)
-    return { success: false, reason: "Invalid URL or message" };
+  const txId = utils.createTxId();
+  if (!url || !message) return { success: false, reason: "Invalid parameters" };
 
   try {
-    const mediaType = getMediaType(url);
+    const mediaType = utils.getMediaType(url);
     if (!mediaType) return { success: false, reason: "Unsupported media type" };
 
-    logger.info(`Processing ${mediaType} URL: ${url.substring(0, 100)}...`);
+    logger.info(`[TX:${txId}] Processing ${mediaType}`, {
+      url: utils.truncateUrl(url),
+    });
 
-    // CDN URL handling - skip extraction if it's already a CDN URL
-    let mediaData;
-    if (url.includes("akamaized.net") || url.includes("tiktokcdn.com")) {
-      mediaData = { url };
-    } else {
-      // Queue the extraction task
-      mediaData = await extractMediaUrl(url, mediaType);
-    }
-
-    logger.debug(
-      `Extracted media data for ${mediaType}: ${JSON.stringify(
-        typeof mediaData === "object"
-          ? {
-              ...mediaData,
-              url: mediaData.url
-                ? mediaData.url.substring(0, 100) + "..."
-                : undefined,
-            }
-          : mediaData,
-      )}`,
-    );
-
-    if (mediaType === "soundcloud" && mediaData.buffer) {
-      // Validate buffer before sending
-      if (Buffer.isBuffer(mediaData.buffer) && mediaData.buffer.length > 0) {
-        if (mediaData.buffer.length > MAX_FILE_SIZE) {
-          throw new Error(
-            `SoundCloud audio size (${mediaData.buffer.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`,
+    const mediaData =
+      url.includes("akamaized.net") || url.includes("tiktokcdn.com")
+        ? { url }
+        : await queues.extraction.enqueue(() =>
+            extractMediaUrl(url, mediaType),
           );
-        }
 
-        const base64Buffer = mediaData.buffer.toString("base64");
-        const media = new MessageMedia(mediaData.mimeType, base64Buffer);
-
-        await sendingQueue.enqueue(async () => {
-          try {
-            await message.reply(media);
-            logger.info(
-              `Successfully sent SoundCloud audio for URL: ${url.substring(0, 100)}...`,
-            );
-          } catch (error) {
-            logger.error(`Failed to send SoundCloud media: ${error.message}`);
-            throw error;
-          }
-        });
-
-        return { success: true };
-      } else {
-        throw new Error("Invalid buffer returned from SoundCloud extractor");
-      }
-    }
-
-    // For URL-based media, proceed as usual
     const mediaUrls = Array.isArray(mediaData.url)
       ? mediaData.url
       : [mediaData.url];
-
-    // Check if we have too many media items
-    if (mediaUrls.length > 5) {
-      throw new Error(
-        `Too many media items (${mediaUrls.length}). Maximum allowed is 5.`,
-      );
+    if (mediaUrls.length > CONFIG.MAX_MEDIA_ITEMS) {
+      throw new Error(`Too many media items (${mediaUrls.length})`);
     }
 
-    let successCount = 0;
-    let lastError = null;
+    const results = await Promise.allSettled(
+      mediaUrls.map((url) =>
+        queues.download
+          .enqueue(() => downloadMedia(url, txId))
+          .then((content) =>
+            queues.sending.enqueue(() =>
+              message.reply(new MessageMedia(content.mimeType, content.base64)),
+            ),
+          ),
+      ),
+    );
 
-    for (const mediaUrl of mediaUrls) {
-      try {
-        // Queue the download task - FIX: Properly await and handle errors
-        const mediaContent = await downloadQueue.enqueue(() =>
-          downloadMedia(mediaUrl),
-        );
-
-        // FIX: Verify mediaContent is defined before destructuring
-        if (!mediaContent) {
-          throw new Error(
-            `Failed to download media from URL: ${mediaUrl.substring(0, 100)}...`,
-          );
-        }
-
-        const { base64, mimeType } = mediaContent;
-        logger.debug(
-          `Downloaded media - URL: ${mediaUrl.substring(0, 100)}..., MIME type: ${mimeType}, size: ${base64.length} bytes`,
-        );
-
-        // Check file size after base64 encoding
-        if (base64.length > MAX_FILE_SIZE * 1.37) {
-          // Account for base64 encoding overhead
-          throw new Error(
-            `Encoded media size (${base64.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`,
-          );
-        }
-
-        const media = new MessageMedia(mimeType, base64);
-
-        // Queue the sending task
-        await sendingQueue.enqueue(async () => {
-          try {
-            await message.reply(media);
-            logger.info(
-              `Successfully sent media for URL: ${mediaUrl.substring(0, 100)}...`,
-            );
-            successCount++;
-          } catch (error) {
-            logger.error(
-              `Failed to send media for URL ${mediaUrl.substring(0, 100)}...: ${error.message}`,
-            );
-            throw error;
-          }
-        });
-      } catch (error) {
-        logger.error(
-          `Failed to process media URL ${mediaUrl.substring(0, 100)}...:`,
-          error,
-        );
-        lastError = error;
-        // Continue with other URLs even if one fails
-      }
-    }
-
-    // If at least one media was sent successfully, consider it a success
-    if (successCount > 0) {
-      return { success: true, partialSuccess: successCount < mediaUrls.length };
-    } else {
-      throw lastError || new Error("Failed to process all media items");
-    }
+    const successCount = results.filter((r) => r.status === "fulfilled").length;
+    return {
+      success: successCount > 0,
+      txId,
+      partialSuccess: successCount < mediaUrls.length,
+      successCount,
+      totalCount: mediaUrls.length,
+    };
   } catch (error) {
-    logger.error("Error in processing media:", error);
-
-    // Categorize errors for better handling
-    if (error.message.includes("File size exceeds")) {
-      return {
-        success: false,
-        reason: "File size limit exceeded",
-        details: error.message,
-        shouldNotify: true, // Flag to indicate user should be notified
-      };
-    } else if (error.message.includes("timed out")) {
-      return {
-        success: false,
-        reason: "Processing timed out",
-        details: error.message,
-        shouldNotify: true,
-      };
-    } else if (
-      error.code === "ECONNABORTED" ||
-      error.message.includes("timeout")
-    ) {
-      return {
-        success: false,
-        reason: "Network timeout",
-        details: error.message,
-        shouldNotify: true,
-      };
-    } else if (error.response && error.response.status >= 400) {
-      return {
-        success: false,
-        reason: `Server error (${error.response.status})`,
-        details: error.message,
-        shouldNotify: true,
-      };
-    }
-
+    logger.error(`[TX:${txId}] Processing failed`, { error: error.message });
     return {
       success: false,
-      reason: "Processing error",
+      txId,
+      reason:
+        error.code === "FILE_TOO_LARGE" ? "File too large" : "Processing error",
       details: error.message,
-      shouldNotify: error.shouldNotify || false,
+      shouldNotify: true,
     };
   }
 }
 
-// Main handler for media extraction
 export async function handleMediaExtraction(message) {
+  const txId = utils.createTxId();
   if (!message?.body) return { processed: false };
 
   try {
-    const url = extractUrl(message.body);
+    const url = message.body.match(
+      Object.values(MEDIA_PATTERNS).find((p) => p.test(message.body)),
+    )?.[0];
     if (!url) return { processed: false };
-
-    const mediaType = getMediaType(url);
-    if (!mediaType) return { processed: false };
 
     const chat = await message.getChat();
     await chat.sendStateTyping();
 
     const result = await sendMedia(url, message);
-
-    // Handle user notification for specific errors
     if (!result.success && result.shouldNotify) {
-      try {
-        await message.reply(
-          `Sorry, I couldn't process that media: ${result.reason}. ${result.details || ""}`,
-        );
-      } catch (notifyError) {
-        logger.error("Failed to send error notification:", notifyError);
-      }
+      await message
+        .reply(`Failed to process media: ${result.reason}`)
+        .catch(() => {});
     }
 
-    return {
-      processed: result.success,
-      mediaType,
-      url,
-      ...(!result.success && { error: result.reason, details: result.details }),
-      ...(result.partialSuccess && { partialSuccess: true }),
-    };
+    return { processed: result.success, txId, ...result };
   } catch (error) {
-    logger.error("Error in handling media extraction:", error);
-
-    try {
-      // Attempt to notify user of the error
-      await message.reply(
-        "Sorry, I couldn't process that media due to an unexpected error.",
-      );
-    } catch (replyError) {
-      logger.error("Failed to send error notification:", replyError);
-    }
-
-    return {
-      processed: false,
-      error: error.message,
-      stack: error.stack, // Include stack trace for debugging
-    };
+    logger.error(`[TX:${txId}] Extraction failed`, { error: error.message });
+    return { processed: false, error: error.message };
   }
 }
-
-// Queue status monitoring
-export function getQueueStatus() {
-  return {
-    extraction: {
-      pending: extractionQueue.size,
-      processing: extractionQueue.isPaused ? 0 : extractionQueue.pending.length,
-    },
-    download: {
-      pending: downloadQueue.size,
-      processing: downloadQueue.isPaused ? 0 : downloadQueue.pending.length,
-    },
-    sending: {
-      pending: sendingQueue.size,
-      processing: sendingQueue.isPaused ? 0 : sendingQueue.pending.length,
-    },
-  };
-}
-
-// Utility to handle queue errors and backpressure
-function setupQueueErrorHandling(queue, name) {
-  queue.on("error", (error, job) => {
-    logger.error(`Error in ${name} queue:`, error);
-    // Job will be automatically removed from queue
-  });
-
-  // Handle backpressure by monitoring queue size
-  setInterval(() => {
-    if (queue.size > 20) {
-      logger.warn(
-        `${name} queue is experiencing backpressure: ${queue.size} items pending`,
-      );
-      if (!queue.isPaused) {
-        queue.pause();
-        setTimeout(() => queue.resume(), 10000); // Resume after 10 seconds
-      }
-    }
-  }, 5000);
-}
-
-// Setup error handling for all queues
-setupQueueErrorHandling(extractionQueue, "Extraction");
-setupQueueErrorHandling(downloadQueue, "Download");
-setupQueueErrorHandling(sendingQueue, "Sending");
