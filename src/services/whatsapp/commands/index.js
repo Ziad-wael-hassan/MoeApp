@@ -368,7 +368,7 @@ export const commandHandlers = {
     try {
       await chat.sendStateTyping();
 
-      // First, check if it's a Spotify URL
+      // Check if the query is a Spotify URL.
       if (query.includes("spotify.com/track/")) {
         try {
           const response = await axios.get(
@@ -380,7 +380,7 @@ export const commandHandlers = {
 
           if (response.data) {
             const { title, artist } = response.data;
-            // Notify user about the song details before downloading
+            // Notify user about the song details.
             await message.reply(
               `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
             );
@@ -393,7 +393,7 @@ export const commandHandlers = {
         }
       }
 
-      // Search for songs
+      // Search for songs.
       try {
         const searchResponse = await axios.get(
           "https://elghamazy-moeify.hf.space/search",
@@ -412,8 +412,9 @@ export const commandHandlers = {
 
         const results = searchResponse.data.results;
 
-        // If only one result, fetch full details and download automatically
+        // If only one result, auto-download.
         if (results.length === 1) {
+          // Fetch full song details using the provided URL.
           const songDetailsResponse = await axios.get(
             "https://elghamazy-moeify.hf.space/getSong",
             {
@@ -424,7 +425,7 @@ export const commandHandlers = {
             throw new Error("Failed to get song details");
           }
           const { title, artist } = songDetailsResponse.data;
-          // Notify user before downloading
+          // Notify user before downloading.
           await message.reply(
             `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
           );
@@ -432,10 +433,10 @@ export const commandHandlers = {
           return;
         }
 
-        // Send results message for multiple choices
+        // Multiple results: send selection message.
         resultsMessage = await message.reply(formatSearchResults(results));
 
-        // Wait for user selection
+        // Wait for user selection.
         const { selectedTrack } = await new Promise((resolve, reject) => {
           const handler = async (reply) => {
             try {
@@ -471,10 +472,10 @@ export const commandHandlers = {
           }, SONG_SELECTION_TIMEOUT);
         });
 
-        // Inform the user that the song details are being fetched
+        // Inform user that song details are being fetched.
         await resultsMessage.edit("*⏳ Fetching song details...*");
 
-        // Get full song details
+        // Get full song details.
         const songDetailsResponse = await axios.get(
           "https://elghamazy-moeify.hf.space/getSong",
           {
@@ -486,14 +487,19 @@ export const commandHandlers = {
           throw new Error("Failed to get song details");
         }
 
-        // Inform the user that the download is starting
+        // Inform user that the download is starting.
         await resultsMessage.edit("*⏬ Downloading song...*");
 
-        // Process the download
+        // Notify the user of the song details.
+        const { title, artist } = songDetailsResponse.data;
+        await message.reply(
+          `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
+        );
+
+        // Process the download.
         await processSongDownload(message, songDetailsResponse.data);
 
-        // Final success message with song title and artist details
-        const { title, artist } = songDetailsResponse.data;
+        // Final success message.
         await resultsMessage.edit(
           `*✅ Download Completed!*\n\n*Title:* ${title}\n*Artist:* ${artist}\n\nEnjoy your music!`,
         );
@@ -544,7 +550,6 @@ export const commandHandlers = {
       await chat.clearState();
     }
   },
-
   async track(message, args) {
     try {
       let targetNumber;
