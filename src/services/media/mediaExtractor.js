@@ -39,17 +39,8 @@ const axiosInstance = axios.create({
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
     Accept: "*/*",
-    "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     Connection: "keep-alive",
-    Referer: "https://www.tiktok.com/",
-    "Sec-Fetch-Dest": "video",
-    "Sec-Fetch-Mode": "no-cors",
-    "Sec-Fetch-Site": "cross-site",
-    "Sec-Ch-Ua":
-      '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
   },
   validateStatus: (status) => status >= 200 && status < 300,
   maxContentLength: 50 * 1024 * 1024, // 50MB max
@@ -108,7 +99,8 @@ function getSpecializedHeaders(url) {
   return headers;
 }
 
-// Download media with retry mechanism
+// Add these modifications to the downloadMedia function:
+
 async function downloadMedia(url, retryCount = 3) {
   if (!url) throw new Error("Invalid media URL");
 
@@ -117,87 +109,152 @@ async function downloadMedia(url, retryCount = 3) {
     try {
       // Get specialized headers for this URL
       const headers = getSpecializedHeaders(url);
+      
+      logger.debug(`Download attempt ${attempt} starting for URL: ${url.substring(0, 100)}...`, {
+        headers: headers,
+        attempt: attempt,
+        maxRetries: retryCount
+      });
 
       const response = await axiosInstance.get(url, {
         responseType: "arraybuffer",
         timeout: PROCESSING_TIMEOUT,
         headers,
+        validateStatus: false, // Allow non-2xx responses to be handled
         onDownloadProgress: (progressEvent) => {
           if (progressEvent.total && progressEvent.total > MAX_FILE_SIZE) {
-            throw new Error(
-              `File size exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`,
-            );
+            const error = new Error(`File size exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`);
+            error.code = 'FILE_TOO_LARGE';
+            throw error;
+          }
+          
+          // Log download progress every 25%
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+            if (percent % 25 === 0) {
+              logger.debug(`Download progress: ${percent}% (${progressEvent.loaded}/${progressEvent.total} bytes)`);
+            }
           }
         },
       });
+
+      // Log detailed response information
+      logger.debug('Download response received', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        contentLength: response.headers['content-length'],
+        contentType: response.headers['content-type'],
+        dataLength: response.data?.length
+      });
+
+      if (response.status !== 200) {
+        throw new Error(`HTTP ${response.status} - ${response.statusText || 'No status text provided'}`);
+      }
 
       if (!response.data || response.data.length === 0) {
         throw new Error("Empty response received from server");
       }
 
       const buffer = Buffer.from(response.data);
+      
+      logger.debug('Buffer created from response', {
+        bufferLength: buffer.length,
+        isBuffer: Buffer.isBuffer(buffer),
+        contentType: response.headers['content-type']
+      });
 
       // Check file size after download
       if (buffer.length > MAX_FILE_SIZE) {
-        throw new Error(
-          `Downloaded file size (${buffer.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`,
+        const error = new Error(
+          `Downloaded file size (${buffer.length / (1024 * 1024)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024)}MB)`
         );
+        error.code = 'FILE_TOO_LARGE';
+        throw error;
       }
 
-      // For debugging content types
-      logger.debug(
-        `Downloaded media content type: ${response.headers["content-type"]} from URL: ${url.substring(0, 100)}...`,
-      );
-
       const base64 = buffer.toString("base64");
-      const mimeType =
-        response.headers["content-type"] || "application/octet-stream";
+      const mimeType = response.headers["content-type"] || "application/octet-stream";
+
+      logger.info('Media download completed successfully', {
+        mimeType,
+        finalSize: buffer.length,
+        attempt
+      });
 
       return { base64, mimeType };
+
     } catch (error) {
-      const errorDetails = error.response
-        ? {
-            status: error.response.status,
-            statusText: error.response.statusText,
-            headers: error.response.headers,
-            data: error.response.data
-              ? error.response.data instanceof Buffer
-                ? `Binary data of length ${error.response.data.length}`
-                : JSON.stringify(error.response.data).substring(0, 200)
-              : "No data",
-          }
-        : null;
+      const errorDetails = {
+        message: error.message,
+        code: error.code,
+        name: error.name,
+        attempt,
+        url: url.substring(0, 100)
+      };
+
+      if (error.response) {
+        errorDetails.response = {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          headers: error.response.headers,
+          data: error.response.data instanceof Buffer 
+            ? `Binary data of length ${error.response.data.length}`
+            : (typeof error.response.data === 'string' 
+              ? error.response.data.substring(0, 200) 
+              : JSON.stringify(error.response.data).substring(0, 200))
+        };
+      }
+
+      if (error.request) {
+        errorDetails.request = {
+          method: error.request.method,
+          path: error.request.path,
+          headers: error.request.getHeaders?.() || {},
+          timings: error.request.timings
+        };
+      }
+
+      if (error.code === 'ECONNABORTED') {
+        errorDetails.timeoutConfig = {
+          timeout: PROCESSING_TIMEOUT,
+          maxFileSize: MAX_FILE_SIZE
+        };
+      }
+
+      logger.error('Download attempt failed', errorDetails);
 
       lastError = error;
 
-      logger.error(
-        `Download attempt ${attempt} failed for URL: ${url.substring(0, 100)}...`,
-        {
-          error: error.message,
-          responseDetails: errorDetails,
-        },
-      );
-
       // Don't retry if it's a file size error
-      if (error.message.includes("File size exceeds")) {
+      if (error.code === 'FILE_TOO_LARGE') {
         throw error;
       }
 
       if (attempt < retryCount) {
-        logger.warn(
-          `Retrying download attempt ${attempt} for URL: ${url.substring(0, 100)}...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+        const backoffTime = 1000 * attempt;
+        logger.info(`Retrying download after ${backoffTime}ms delay`, {
+          attempt,
+          nextAttempt: attempt + 1,
+          backoffTime
+        });
+        await new Promise((resolve) => setTimeout(resolve, backoffTime));
       }
     }
   }
 
-  throw (
-    lastError ||
-    new Error(`Failed to download media after ${retryCount} attempts`)
-  );
-}
+  // Log final error before giving up
+  logger.error('All download attempts failed', {
+    totalAttempts: retryCount,
+    finalError: {
+      message: lastError.message,
+      code: lastError.code,
+      name: lastError.name
+    }
+  });
 
+  throw lastError || new Error(`Failed to download media after ${retryCount} attempts`);
+}
 // Extract media URL based on platform
 async function extractMediaUrl(url, mediaType) {
   if (!url || !mediaType) {
