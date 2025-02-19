@@ -59,6 +59,8 @@ const axiosInstance = axios.create({
   maxBodyLength: CONFIG.MAX_FILE_SIZE
 });
 
+// ... (previous code remains the same until extractMediaUrl function)
+
 async function extractMediaUrl(url, mediaType) {
   const extractors = {
     instagram: extractInstagramMedia,
@@ -80,10 +82,27 @@ async function extractMediaUrl(url, mediaType) {
       )
     ]);
 
-    if (mediaData.buffer) {
-      return mediaData; // For SoundCloud: { buffer, mimeType }
+    // Validate mediaData
+    if (!mediaData) {
+      throw new Error('Extractor returned no data');
     }
-    return { url: mediaData }; // For others: URL string
+
+    if (mediaData.buffer) {
+      return { buffer: mediaData.buffer, mimeType: mediaData.mimeType };
+    }
+
+    // Ensure we have a valid URL string
+    if (typeof mediaData === 'string') {
+      return { url: mediaData };
+    }
+    if (mediaData.url && typeof mediaData.url === 'string') {
+      return { url: mediaData.url };
+    }
+    if (mediaData.play && typeof mediaData.play === 'string') {
+      return { url: mediaData.play };
+    }
+
+    throw new Error('Invalid media data format returned from extractor');
   } catch (error) {
     logger.error(`Media extraction failed for ${mediaType}`, { 
       url: utils.truncateUrl(url),
@@ -144,30 +163,67 @@ async function sendMedia(url, message) {
 
     logger.info(`[TX:${txId}] Processing ${mediaType}`, { url: utils.truncateUrl(url) });
 
-    const mediaData = url.includes("akamaized.net") || url.includes("tiktokcdn.com")
-      ? { url }
-      : await queues.extraction.enqueue(() => extractMediaUrl(url, mediaType));
+    let mediaData;
+    try {
+      if (url.includes("akamaized.net") || url.includes("tiktokcdn.com")) {
+        mediaData = { url };
+      } else {
+        mediaData = await queues.extraction.enqueue(() => extractMediaUrl(url, mediaType));
+      }
 
+      // Validate mediaData
+      if (!mediaData || (!mediaData.url && !mediaData.buffer)) {
+        throw new Error('Invalid media data received');
+      }
+    } catch (error) {
+      logger.error(`[TX:${txId}] Media extraction failed`, { 
+        error: error.message,
+        mediaType,
+        url: utils.truncateUrl(url)
+      });
+      throw new Error(`Failed to extract media: ${error.message}`);
+    }
+
+    // Handle buffer-based media (like SoundCloud)
+    if (mediaData.buffer) {
+      const content = {
+        base64: mediaData.buffer.toString('base64'),
+        mimeType: mediaData.mimeType || 'audio/mp3'
+      };
+      await queues.sending.enqueue(() => 
+        message.reply(new MessageMedia(content.mimeType, content.base64))
+      );
+      return { success: true, txId };
+    }
+
+    // Handle URL-based media
     const mediaUrls = Array.isArray(mediaData.url) ? mediaData.url : [mediaData.url];
+    if (!mediaUrls.length) {
+      throw new Error('No media URLs found');
+    }
+    
     if (mediaUrls.length > CONFIG.MAX_MEDIA_ITEMS) {
       throw new Error(`Too many media items (${mediaUrls.length})`);
     }
 
     const results = await Promise.allSettled(
-      mediaUrls.map(url => 
-        queues.download
-          .enqueue(() => downloadMedia(url, txId))
-          .then(content => 
-            queues.sending.enqueue(() => 
-              message.reply(new MessageMedia(content.mimeType, content.base64))
-            )
-          )
-      )
+      mediaUrls.map(async (mediaUrl) => {
+        if (!mediaUrl) throw new Error('Invalid media URL');
+        
+        const content = await queues.download.enqueue(() => downloadMedia(mediaUrl, txId));
+        return queues.sending.enqueue(() => 
+          message.reply(new MessageMedia(content.mimeType, content.base64))
+        );
+      })
     );
 
     const successCount = results.filter(r => r.status === 'fulfilled').length;
+    if (successCount === 0) {
+      throw new Error('All media downloads failed');
+    }
+
     return {
-      success: successCount > 0,
+      success: true,
       txId,
       partialSuccess: successCount < mediaUrls.length,
       successCount,
@@ -175,7 +231,11 @@ async function sendMedia(url, message) {
     };
 
   } catch (error) {
-    logger.error(`[TX:${txId}] Processing failed`, { error: error.message });
+    logger.error(`[TX:${txId}] Processing failed`, { 
+      error: error.message,
+      stack: error.stack,
+      url: utils.truncateUrl(url)
+    });
     return {
       success: false,
       txId,
