@@ -1,270 +1,161 @@
+// mediaExtractor.js
 import { logger } from "../../utils/logger.js";
 import WhatsAppWeb from "whatsapp-web.js";
 import axios from "axios";
 import { MEDIA_PATTERNS } from "./mediaPatterns.js";
-import {
-  extractInstagramMedia,
-  extractTikTokMedia,
-  extractFacebookMedia,
-  extractSoundCloudMedia,
-} from "./extractors.js";
-import Queue from "queue-promise";
 
 const { MessageMedia } = WhatsAppWeb;
-const CONFIG = {
-  TIMEOUT: 60000,
-  MAX_FILE_SIZE: 30 * 1024 * 1024,
-  MAX_RETRIES: 3,
-  MAX_MEDIA_ITEMS: 5
-};
+const PROCESSING_TIMEOUT = 60000; // 60 seconds
 
-const queues = {
-  extraction: new Queue({ concurrent: 3, interval: 500 }),
-  download: new Queue({ concurrent: 5, interval: 500 }),
-  sending: new Queue({ concurrent: 2, interval: 1000 })
-};
-
-const utils = {
-  truncateUrl: (url) => url ? `${url.substring(0, 50)}...` : 'undefined',
-  createTxId: () => Date.now().toString(36),
-  getMediaType: (url) => {
-    if (!url) return null;
-    for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
-      if (pattern.test(url)) return platform.toLowerCase();
-    }
-    return url.includes("akamaized.net") && url.includes("video/tos") ? "tiktok" : null;
-  },
-  getHeaders: (url) => {
-    const baseHeaders = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      Accept: "*/*",
-      Connection: "keep-alive"
-    };
-
-    if (url.includes("tiktok") || url.includes("akamaized.net")) {
-      return { ...baseHeaders, Referer: "https://www.tiktok.com/", Origin: "https://www.tiktok.com" };
-    }
-    if (url.includes("instagram")) {
-      return { ...baseHeaders, Referer: "https://www.instagram.com/", Origin: "https://www.instagram.com" };
-    }
-    return baseHeaders;
-  }
-};
-
+// Configure axios instance
 const axiosInstance = axios.create({
-  timeout: CONFIG.TIMEOUT,
+  timeout: 30000,
   maxRedirects: 10,
+  headers: {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    Accept: "image/*, video/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    Connection: "keep-alive",
+  },
   validateStatus: (status) => status >= 200 && status < 300,
-  maxContentLength: CONFIG.MAX_FILE_SIZE,
-  maxBodyLength: CONFIG.MAX_FILE_SIZE
+  maxContentLength: 50 * 1024 * 1024, // 50MB max
+  maxBodyLength: 50 * 1024 * 1024, // 50MB max
 });
 
-// ... (previous code remains the same until extractMediaUrl function)
+async function extractMediaWithCobalt(url, options = {}) {
+  const cobaltUrl = "https://nuclear-ashien-cobalto-d51291d3.koyeb.app/";
 
-async function extractMediaUrl(url, mediaType) {
-  const extractors = {
-    instagram: extractInstagramMedia,
-    tiktok: extractTikTokMedia,
-    facebook: extractFacebookMedia,
-    soundcloud: extractSoundCloudMedia,
+  const payload = {
+    url,
+    videoQuality: "720",
+    youtubeHLS: true,
+    twitterGif: false,
+    tiktokH265: true,
+    alwaysProxy: true,
+    ...options,
   };
 
-  const extractor = extractors[mediaType];
-  if (!extractor) {
-    throw new Error(`No extractor available for media type: ${mediaType}`);
-  }
-
   try {
-    const mediaData = await Promise.race([
-      extractor(url),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Extraction timed out')), CONFIG.TIMEOUT)
-      )
-    ]);
-
-    // Validate mediaData
-    if (!mediaData) {
-      throw new Error('Extractor returned no data');
-    }
-
-    if (mediaData.buffer) {
-      return { buffer: mediaData.buffer, mimeType: mediaData.mimeType };
-    }
-
-    // Ensure we have a valid URL string
-    if (typeof mediaData === 'string') {
-      return { url: mediaData };
-    }
-    if (mediaData.url && typeof mediaData.url === 'string') {
-      return { url: mediaData.url };
-    }
-    if (mediaData.play && typeof mediaData.play === 'string') {
-      return { url: mediaData.play };
-    }
-
-    throw new Error('Invalid media data format returned from extractor');
-  } catch (error) {
-    logger.error(`Media extraction failed for ${mediaType}`, { 
-      url: utils.truncateUrl(url),
-      error: error.message 
+    const response = await axios.post(cobaltUrl, payload, {
+      headers: {
+        accept: "application/json",
+        "Content-Type": "application/json",
+      },
     });
+
+    if (response.status !== 200 || !response.data) {
+      throw new Error("Failed to fetch media details from Cobalt");
+    }
+
+    return response.data;
+  } catch (error) {
+    logger.error("Cobalt extraction error:", error);
     throw error;
   }
 }
 
-async function downloadMedia(url, txId) {
+// Extract URLs from message
+function extractUrl(messageBody) {
+  if (!messageBody) return null;
+
+  for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
+    const match = messageBody.match(pattern);
+    if (match && match[0]) return match[0];
+  }
+  return null;
+}
+
+// Download media
+async function downloadMedia(url) {
   if (!url) throw new Error("Invalid media URL");
 
-  for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES; attempt++) {
-    try {
-      logger.debug(`[TX:${txId}] Download attempt ${attempt}`, { url: utils.truncateUrl(url) });
+  const response = await axiosInstance.get(url, {
+    responseType: "arraybuffer",
+    timeout: PROCESSING_TIMEOUT,
+  });
 
-      const response = await axiosInstance.get(url, {
-        responseType: "arraybuffer",
-        headers: utils.getHeaders(url),
-        onDownloadProgress: (e) => {
-          if (e.total > CONFIG.MAX_FILE_SIZE) {
-            throw Object.assign(new Error("File too large"), { code: 'FILE_TOO_LARGE' });
-          }
-        }
-      });
+  const buffer = Buffer.from(response.data);
+  const base64 = buffer.toString("base64");
+  const mimeType =
+    response.headers["content-type"] || "application/octet-stream";
 
-      if (!response.data?.length) throw new Error("Empty response");
-
-      const buffer = Buffer.from(response.data);
-      if (buffer.length > CONFIG.MAX_FILE_SIZE) {
-        throw Object.assign(new Error("File too large"), { code: 'FILE_TOO_LARGE' });
-      }
-
-      return {
-        base64: buffer.toString("base64"),
-        mimeType: response.headers["content-type"] || "application/octet-stream"
-      };
-    } catch (error) {
-      logger.error(`[TX:${txId}] Download failed`, {
-        attempt,
-        error: error.message,
-        status: error.response?.status
-      });
-
-      if (error.code === 'FILE_TOO_LARGE' || attempt === CONFIG.MAX_RETRIES) throw error;
-      await new Promise(resolve => setTimeout(resolve, attempt * 1000));
-    }
-  }
+  return { base64, mimeType };
 }
 
 async function sendMedia(url, message) {
-  const txId = utils.createTxId();
-  if (!url || !message) return { success: false, reason: "Invalid parameters" };
+  if (!url || !message) return false;
 
   try {
-    const mediaType = utils.getMediaType(url);
-    if (!mediaType) return { success: false, reason: "Unsupported media type" };
+    const mediaData = await extractMediaWithCobalt(url);
 
-    logger.info(`[TX:${txId}] Processing ${mediaType}`, { url: utils.truncateUrl(url) });
+    logger.debug(`Extracted media data: ${JSON.stringify(mediaData)}`);
 
-    let mediaData;
-    try {
-      if (url.includes("akamaized.net") || url.includes("tiktokcdn.com")) {
-        mediaData = { url };
-      } else {
-        mediaData = await queues.extraction.enqueue(() => extractMediaUrl(url, mediaType));
+    if (mediaData.status === "picker" && Array.isArray(mediaData.picker)) {
+      for (const item of mediaData.picker) {
+        if (item.type === "photo" && item.url) {
+          const { base64, mimeType } = await downloadMedia(item.url);
+          logger.debug(
+            `Downloaded media - URL: ${item.url}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
+          );
+
+          const media = new MessageMedia(mimeType, base64);
+          await message.reply(media);
+        }
       }
+    } else {
+      const mediaUrls = Array.isArray(mediaData.url)
+        ? mediaData.url
+        : [mediaData.url];
 
-      // Validate mediaData
-      if (!mediaData || (!mediaData.url && !mediaData.buffer)) {
-        throw new Error('Invalid media data received');
-      }
-    } catch (error) {
-      logger.error(`[TX:${txId}] Media extraction failed`, { 
-        error: error.message,
-        mediaType,
-        url: utils.truncateUrl(url)
-      });
-      throw new Error(`Failed to extract media: ${error.message}`);
-    }
-
-    // Handle buffer-based media (like SoundCloud)
-    if (mediaData.buffer) {
-      const content = {
-        base64: mediaData.buffer.toString('base64'),
-        mimeType: mediaData.mimeType || 'audio/mp3'
-      };
-      await queues.sending.enqueue(() => 
-        message.reply(new MessageMedia(content.mimeType, content.base64))
-      );
-      return { success: true, txId };
-    }
-
-    // Handle URL-based media
-    const mediaUrls = Array.isArray(mediaData.url) ? mediaData.url : [mediaData.url];
-    if (!mediaUrls.length) {
-      throw new Error('No media URLs found');
-    }
-    
-    if (mediaUrls.length > CONFIG.MAX_MEDIA_ITEMS) {
-      throw new Error(`Too many media items (${mediaUrls.length})`);
-    }
-
-    const results = await Promise.allSettled(
-      mediaUrls.map(async (mediaUrl) => {
-        if (!mediaUrl) throw new Error('Invalid media URL');
-        
-        const content = await queues.download.enqueue(() => downloadMedia(mediaUrl, txId));
-        return queues.sending.enqueue(() => 
-          message.reply(new MessageMedia(content.mimeType, content.base64))
+      for (const mediaUrl of mediaUrls) {
+        const { base64, mimeType } = await downloadMedia(mediaUrl);
+        logger.debug(
+          `Downloaded media - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
         );
-      })
-    );
 
-    const successCount = results.filter(r => r.status === 'fulfilled').length;
-    if (successCount === 0) {
-      throw new Error('All media downloads failed');
+        const media = new MessageMedia(
+          mimeType,
+          base64,
+          mediaData.filename || undefined
+        );
+
+        // Check if it's an audio file
+        if (mimeType.startsWith('audio/')) {
+          await message.reply(media, null, { sendAudioAsVoice: false });
+        } else {
+          await message.reply(media);
+        }
+      }
     }
 
-    return {
-      success: true,
-      txId,
-      partialSuccess: successCount < mediaUrls.length,
-      successCount,
-      totalCount: mediaUrls.length
-    };
-
+    return true;
   } catch (error) {
-    logger.error(`[TX:${txId}] Processing failed`, { 
-      error: error.message,
-      stack: error.stack,
-      url: utils.truncateUrl(url)
-    });
-    return {
-      success: false,
-      txId,
-      reason: error.code === 'FILE_TOO_LARGE' ? "File too large" : "Processing error",
-      details: error.message,
-      shouldNotify: true
-    };
+    logger.error("Error in processing media:", error);
+    return false;
   }
 }
 
+// Main handler for media extraction
 export async function handleMediaExtraction(message) {
-  const txId = utils.createTxId();
   if (!message?.body) return { processed: false };
 
   try {
-    const url = message.body.match(Object.values(MEDIA_PATTERNS).find(p => p.test(message.body)))?.[0];
+    const url = extractUrl(message.body);
     if (!url) return { processed: false };
 
     const chat = await message.getChat();
     await chat.sendStateTyping();
 
-    const result = await sendMedia(url, message);
-    if (!result.success && result.shouldNotify) {
-      await message.reply(`Failed to process media: ${result.reason}`).catch(() => {});
-    }
+    const success = await sendMedia(url, message);
 
-    return { processed: result.success, txId, ...result };
+    return {
+      processed: success,
+      url,
+    };
   } catch (error) {
-    logger.error(`[TX:${txId}] Extraction failed`, { error: error.message });
+    logger.error("Error in handling media");
     return { processed: false, error: error.message };
   }
 }
