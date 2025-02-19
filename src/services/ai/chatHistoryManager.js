@@ -13,7 +13,7 @@ export const ChatHistoryManager = {
     const userHistory = this.histories.get(userId);
     userHistory.push({
       role: role,
-      parts: [{ text: text }]
+      parts: [{ text: text }],
     });
 
     // Limit history size to prevent excessive memory usage
@@ -35,5 +35,5 @@ export const ChatHistoryManager = {
   // Clear all user histories
   clearAllHistories() {
     this.histories.clear();
-  }
+  },
 };

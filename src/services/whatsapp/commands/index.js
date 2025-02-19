@@ -379,6 +379,11 @@ export const commandHandlers = {
           );
 
           if (response.data) {
+            const { title, artist } = response.data;
+            // Notify user about the song details before downloading
+            await message.reply(
+              `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
+            );
             await processSongDownload(message, response.data);
             return;
           }
@@ -407,13 +412,27 @@ export const commandHandlers = {
 
         const results = searchResponse.data.results;
 
-        // If only one result, download it directly
+        // If only one result, fetch full details and download automatically
         if (results.length === 1) {
-          await processSongDownload(message, results[0]);
+          const songDetailsResponse = await axios.get(
+            "https://elghamazy-moeify.hf.space/getSong",
+            {
+              params: { url: results[0].url },
+            },
+          );
+          if (!songDetailsResponse.data) {
+            throw new Error("Failed to get song details");
+          }
+          const { title, artist } = songDetailsResponse.data;
+          // Notify user before downloading
+          await message.reply(
+            `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
+          );
+          await processSongDownload(message, songDetailsResponse.data);
           return;
         }
 
-        // Send results message
+        // Send results message for multiple choices
         resultsMessage = await message.reply(formatSearchResults(results));
 
         // Wait for user selection
@@ -452,7 +471,7 @@ export const commandHandlers = {
           }, SONG_SELECTION_TIMEOUT);
         });
 
-        // Edit message to show downloading status
+        // Inform the user that the song details are being fetched
         await resultsMessage.edit("*⏳ Fetching song details...*");
 
         // Get full song details
@@ -467,16 +486,14 @@ export const commandHandlers = {
           throw new Error("Failed to get song details");
         }
 
-        // Edit message to show downloading status
+        // Inform the user that the download is starting
         await resultsMessage.edit("*⏬ Downloading song...*");
 
         // Process the download
         await processSongDownload(message, songDetailsResponse.data);
 
-        // Final success message
-        // After processing the download
+        // Final success message with song title and artist details
         const { title, artist } = songDetailsResponse.data;
-
         await resultsMessage.edit(
           `*✅ Download Completed!*\n\n*Title:* ${title}\n*Artist:* ${artist}\n\nEnjoy your music!`,
         );

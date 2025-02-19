@@ -5,10 +5,10 @@ import { AI_CONFIG } from "../../config/aiConfig.js";
 
 export async function generateAIResponse(userMessage, userId) {
   const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
-  
+
   const model = genAI.getGenerativeModel({
     model: AI_CONFIG.model.name,
-    generationConfig: AI_CONFIG.model.config
+    generationConfig: AI_CONFIG.model.config,
   });
 
   try {
@@ -17,11 +17,11 @@ export async function generateAIResponse(userMessage, userId) {
 
     const chatSession = model.startChat({
       history: chatHistory,
-      responseSchema: AI_CONFIG.prompt.responseSchema
+      responseSchema: AI_CONFIG.prompt.responseSchema,
     });
 
     const result = await chatSession.sendMessage(
-      `${AI_CONFIG.prompt.base}\n\n${JSON.stringify(AI_CONFIG.prompt.examples, null, 2)}\n\nUser: "${userMessage}"`
+      `${AI_CONFIG.prompt.base}\n\n${JSON.stringify(AI_CONFIG.prompt.examples, null, 2)}\n\nUser: "${userMessage}"`,
     );
 
     return processResponse(result, userMessage, userId);
@@ -46,7 +46,7 @@ function addToHistory(userId, role, text) {
   const history = userChatHistories.get(userId);
   history.push({
     role,
-    parts: [{ text }]
+    parts: [{ text }],
   });
 
   // Limit history size
@@ -67,7 +67,7 @@ function processResponse(result, userMessage, userId) {
     return {
       response: parsedResponse.response || "خليك كده متكلمنيش 🙄",
       command: parsedResponse.command || null,
-      terminate: Boolean(parsedResponse.terminate)
+      terminate: Boolean(parsedResponse.terminate),
     };
   } catch (error) {
     logger.error("Response processing error:", error);
@@ -79,6 +79,6 @@ function getErrorResponse() {
   return {
     response: "مش ناقصه صداع بقا",
     command: "!toggleai",
-    terminate: true
+    terminate: true,
   };
 }
