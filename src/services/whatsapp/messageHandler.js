@@ -71,15 +71,21 @@ async function handleVoiceNoteTranscription(message) {
     
     if (!message.hasMedia) {
       logger.info('No media found in message');
-      return null;
+      return;
     }
 
     const media = await message.downloadMedia();
     logger.info(`Downloaded media with mimetype: ${media.mimetype}`);
     
     logger.info('Sending to transcription API...');
-    const response = await axios.post(`${FASTAPI_URL}/transcribe_file`, {
-      base64_data: media.data
+    // Create a FormData object and append the base64 data
+    const formData = new FormData();
+    formData.append('base64_data', media.data);
+
+    const response = await axios.post(`${FASTAPI_URL}/transcribe_file`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     });
 
     const transcription = response.data.text;
