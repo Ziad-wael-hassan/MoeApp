@@ -277,31 +277,31 @@ export class MessageHandler {
 
   // New method to specifically handle voice messages
   async handleVoiceMessage(message, chat) {
-    try {
-      await ChatState.setTyping(chat);
+  try {
+    logger.info(`Received voice message. Type: ${message.type}`);
+    const transcription = await handleVoiceNoteTranscription(message);
+    
+    if (transcription) {
+      logger.info(`Successfully transcribed: ${transcription}`);
+      // Instead of creating a new object, modify the existing message
+      const originalBody = message.body;
+      message.body = transcription;
       
-      const transcription = await handleVoiceNoteTranscription(message);
-      if (transcription) {
-        logger.info(`Successfully transcribed voice note: ${transcription}`);
-        
-        // Create a modified message object with the transcription as body
-        const modifiedMessage = { 
-          ...message,
-          body: transcription
-        };
-        
-        await this.handleAIResponse(modifiedMessage, chat);
-      } else {
-        logger.info('No transcription returned');
-        await message.reply("Sorry, I couldn't transcribe your voice note. Please try again.");
-      }
-    } catch (error) {
-      logger.error({ err: error }, "Error handling voice message");
-      await message.reply("Sorry, I had trouble processing your voice note.");
-    } finally {
-      await ChatState.clear(chat);
+      await this.handleAIResponse(message, chat);
+      
+      // Restore original body if needed
+      message.body = originalBody;
+    } else {
+      logger.info('No transcription returned');
+      // Use the original message object
+      await message.reply("Sorry, I couldn't transcribe your voice note. Please try again.");
     }
+  } catch (error) {
+    logger.error({ err: error }, "Error handling voice message");
+    await message.reply("An error occurred while processing your voice message.");
   }
+}
+
 
   async handleShutupResponse(message, contact) {
     // Skip if message is a command
