@@ -1,7 +1,6 @@
 // messageHandler.js
 import { ShutupUsers, Commands, Settings } from "../../config/database.js";
 import { logger } from "../../utils/logger.js";
-import chalk from "chalk";
 import { commandHandlers } from "./commands/index.js";
 import { handleMediaExtraction } from "../media/mediaExtractor.js";
 import { generateAIResponse } from "../ai/aiService.js";
@@ -14,62 +13,74 @@ import removeMarkdown from "remove-markdown";
 const { MessageMedia } = WhatsAppWeb;
 const MESSAGE_LENGTH_THRESHOLD = 300;
 const AUDIO_COMMANDS = new Set(["speak"]);
+const SHUTUP_COOLDOWN = 30000; // 30 seconds
+const FASTAPI_URL = 'https://elghamazy-text.hf.space';
 
-// Cooldown period in milliseconds (30 seconds)
-const SHUTUP_COOLDOWN = 30000;
+// Configuration for command responses
+const COMMAND_RESPONSE_CONFIG = {
+  help: { needsArgs: false, needsQuotedMsg: false, audioResponse: false },
+  toggleai: { needsArgs: false, needsQuotedMsg: false, audioResponse: false },
+  togglecmd: { needsArgs: false, needsQuotedMsg: false, audioResponse: false },
+  logs: { needsArgs: false, needsQuotedMsg: false, audioResponse: false },
+  pfp: { needsArgs: true, needsQuotedMsg: true, audioResponse: false },
+  speak: { needsArgs: false, needsQuotedMsg: true, audioResponse: true },
+  img: { needsArgs: true, needsQuotedMsg: false, audioResponse: false },
+  msg: { needsArgs: true, needsQuotedMsg: false, audioResponse: false, minArgs: 2 }
+};
 
+/**
+ * Utility for managing chat states (typing, recording, etc.)
+ */
 const ChatState = {
   async setTyping(chat) {
-    await this.setState(chat, "sendStateTyping", "typing");
+    await this.setState(chat, "sendStateTyping");
   },
+  
   async setRecording(chat) {
-    await this.setState(chat, "sendStateRecording", "recording");
+    await this.setState(chat, "sendStateRecording");
   },
+  
   async clear(chat) {
-    await this.setState(chat, "clearState", "clear");
+    await this.setState(chat, "clearState");
   },
-  async setState(chat, method, state) {
+  
+  async setState(chat, method) {
     try {
       await chat[method]();
     } catch (error) {
-      logger.error({ err: error }, `Failed to set ${state} state`);
+      logger.error({ err: error }, `Failed to set chat state: ${method}`);
     }
   },
 };
 
-async function shouldUseAI() {
+/**
+ * Check if AI functionality is enabled
+ */
+async function isAIEnabled() {
   const setting = await Settings.findOne({ key: "ai_enabled" });
   return setting?.value ?? false;
 }
 
-async function generateVoiceIfNeeded(text, message) {
+async function handleVoiceNoteTranscription(message) {
   try {
-    const contact = await message.getContact();
-    const isMetaAI =
-      contact.name === "Meta AI" || contact.pushname === "Meta AI";
-    if (!isMetaAI) return;
+    if (!message.hasMedia) return;
 
-    const client = whatsappClient.getClient();
-    const reloadedMessage = await waitForCompleteMessage(
-      client,
-      message.id._serialized,
-    );
-    text = reloadedMessage.body;
+    const media = await message.downloadMedia();
+    const response = await axios.post(`${FASTAPI_URL}/transcribe_file`, {
+      base64_data: media.data
+    });
 
-    if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
-      const chat = await message.getChat();
-      await chat.sendStateRecording();
-      const { base64, mimeType } = await textToSpeech(text);
-      const media = new MessageMedia(mimeType, base64);
-      await message.reply(media, chat.id._serialized, {
-        sendAudioAsVoice: true,
-      });
-    }
+    const transcription = response.data.text;
+    return transcription;
   } catch (error) {
-    logger.error({ err: error }, "Error generating voice for message");
+    logger.error({ err: error }, "Error transcribing voice note");
+    return null;
   }
 }
 
+/**
+ * Waits for a message to fully load to handle streaming messages
+ */
 async function waitForCompleteMessage(client, messageId, maxAttempts = 100) {
   let previousMessage = "";
   let sameContentCount = 0;
@@ -88,39 +99,61 @@ async function waitForCompleteMessage(client, messageId, maxAttempts = 100) {
 
     previousMessage = currentContent;
     attempt++;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
+  
   const finalMessage = await client.getMessageById(messageId);
   return removeMarkdown(finalMessage.body);
 }
 
-function commandWillRespond(command, args, hasQuotedMsg) {
-  switch (command) {
-    case "help":
-    case "toggleai":
-    case "togglecmd":
-    case "logs":
-      return true;
-    case "pfp":
-      return args.length > 0 || hasQuotedMsg;
-    case "speak":
-      return hasQuotedMsg;
-    case "img":
-      return args.length > 0;
-    case "msg":
-      return args.length >= 2;
-    default:
-      return false;
+/**
+ * Generate voice response for Meta AI messages if they exceed threshold length
+ */
+async function generateVoiceResponse(text, message) {
+  try {
+    const contact = await message.getContact();
+    const isMetaAI = contact.name === "Meta AI" || contact.pushname === "Meta AI";
+    if (!isMetaAI) return;
+
+    const client = whatsappClient.getClient();
+    const reloadedMessage = await waitForCompleteMessage(client, message.id._serialized);
+    text = reloadedMessage.body;
+
+    if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
+      const chat = await message.getChat();
+      await ChatState.setRecording(chat);
+      const { base64, mimeType } = await textToSpeech(text);
+      const media = new MessageMedia(mimeType, base64);
+      await message.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
+    }
+  } catch (error) {
+    logger.error({ err: error }, "Error generating voice for message");
   }
 }
 
+/**
+ * Check if a command will respond based on its requirements
+ */
+function shouldCommandRespond(command, args, hasQuotedMsg) {
+  const config = COMMAND_RESPONSE_CONFIG[command];
+  if (!config) return false;
+  
+  if (config.needsArgs && args.length === 0 && !hasQuotedMsg) return false;
+  if (config.needsQuotedMsg && !hasQuotedMsg && (!args.length || !config.needsArgs)) return false;
+  if (config.minArgs && args.length < config.minArgs) return false;
+  
+  return true;
+}
+
+/**
+ * Main message handler class
+ */
 export class MessageHandler {
   constructor(processingInterval = 1000) {
     this.messageQueue = [];
     this.usersToRespondTo = new Set();
     this.client = null;
     this.processingInterval = processingInterval;
-    // Map to track last shut-up message timestamp per user (using phoneNumber)
     this.shutupCooldowns = new Map();
   }
 
@@ -129,97 +162,113 @@ export class MessageHandler {
   }
 
   async handleMessage(message) {
-    if (message && message.body) {
+    if (message?.body) {
       this.messageQueue.push(message);
     }
+  }
+
+  async processQueue() {
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      await this.processMessage(message);
+    }
+  }
+
+  start() {
+    setInterval(() => this.processQueue(), this.processingInterval);
   }
 
   async processMessage(message) {
     const chat = await message.getChat();
     const contact = await message.getContact();
     const chatId = typeof chat.id === "object" ? chat.id._serialized : chat.id;
-    const authorId =
-      contact.pushname ||
-      contact.name ||
-      message.author.split("@")[0] ||
-      "unknown";
+    const authorId = contact.pushname || contact.name || message.author.split("@")[0] || "unknown";
 
     const logContext = [
       chatId ? `[Chat: ${chatId}]` : null,
       authorId ? `[Author: ${authorId}]` : null,
-    ]
-      .filter(Boolean)
-      .join(" ");
+    ].filter(Boolean).join(" ");
 
+    // Skip messages that aren't from a group or normal chat
     const isGroupMessage = message.from.includes("@g.us");
     const isNormalChat = message.from.includes("@c.us");
-    const isBotMentioned = this.checkBotMention(message);
-
     if (!isGroupMessage && !isNormalChat) return;
 
-    logger.info(
-      `${logContext} Processing message: "${message.body.substring(0, 50)}"`,
-    );
-
-    // Don't send shut-up if the message is a command
-    const isCommand = message.body.startsWith("!");
-    if (!isCommand) {
-      const shutupUser = await ShutupUsers.findOne({
-        phoneNumber: contact.number,
-      });
-      if (shutupUser) {
-        const now = Date.now();
-        const lastTime = this.shutupCooldowns.get(contact.number) || 0;
-        if (now - lastTime >= SHUTUP_COOLDOWN) {
-          await message.reply(`اسكت يا ${shutupUser.name}`);
-          this.shutupCooldowns.set(contact.number, now);
-        }
-      }
-    }
+    logger.info(`${logContext} Processing message: "${message.body.substring(0, 50)}"`);
 
     try {
-      if (isCommand) {
+      // Handle command if message starts with !
+      if (message.body.startsWith("!")) {
         logger.info(`${logContext} Processing command`);
         await this.handleCommand(message, chat);
         return;
       }
 
+      // Handle shutup response for tracked users
+      await this.handleShutupResponse(message, contact);
+      
+      // Check for media extraction
       const mediaResult = await handleMediaExtraction(message);
       if (mediaResult.processed) {
         await ChatState.clear(chat);
         return;
       }
 
+      // Handle bot mention
+      const isBotMentioned = this.checkBotMention(message);
       if (!this.usersToRespondTo.has(message.author) && isBotMentioned) {
         this.usersToRespondTo.add(message.author);
         await message.reply("??");
         return;
       }
 
-      await generateVoiceIfNeeded(message.body, message);
+      // Generate voice response if needed
+      await generateVoiceResponse(message.body, message);
 
+      // Generate AI response if needed
       const shouldRespond = await this.shouldRespond(message);
-      if (shouldRespond) {
-        await ChatState.setTyping(chat);
+    if (shouldRespond) {
+      await ChatState.setTyping(chat);
+
+      // Check if the message is a voice note and transcribe it
+      if (message.type === 'ptt' || message.type === 'audio') {
+        const transcription = await handleVoiceNoteTranscription(message);
+        if (transcription) {
+          logger.info(`Transcription: ${transcription}`);
+          await this.handleAIResponse({ ...message, body: transcription }, chat);
+        }
+      } else {
         await this.handleAIResponse(message, chat);
       }
-
+    }
       await ChatState.clear(chat);
     } catch (error) {
       logger.error(`${logContext} Fatal error processing message:`, error);
       await ChatState.clear(chat);
-      await message.reply(
-        "I encountered an error processing your message. Please try again later.",
-      );
+      await message.reply("I encountered an error processing your message. Please try again later.");
+    }
+  }
+
+  async handleShutupResponse(message, contact) {
+    // Skip if message is a command
+    if (message.body.startsWith("!")) return;
+    
+    const shutupUser = await ShutupUsers.findOne({ phoneNumber: contact.number });
+    if (shutupUser) {
+      const now = Date.now();
+      const lastTime = this.shutupCooldowns.get(contact.number) || 0;
+      if (now - lastTime >= SHUTUP_COOLDOWN) {
+        await message.reply(`اسكت يا ${shutupUser.name}`);
+        this.shutupCooldowns.set(contact.number, now);
+      }
     }
   }
 
   async shouldRespond(message) {
     try {
-      const aiEnabled = await shouldUseAI();
-      const isReplyToBot =
-        message.hasQuotedMsg &&
-        (await message.getQuotedMessage()).from === message.to;
+      const aiEnabled = await isAIEnabled();
+      const isReplyToBot = message.hasQuotedMsg && 
+                           (await message.getQuotedMessage()).from === message.to;
       const isMediaMessage = message.hasMedia;
 
       return (
@@ -240,10 +289,8 @@ export class MessageHandler {
       const messageText = message.body.trim();
       const mentionText = `@${message.to.split("@")[0]}`;
       const remainingText = messageText.replace(mentionText, "").trim();
-      if (
-        remainingText.length > 0 ||
-        !this.usersToRespondTo.has(message.author)
-      ) {
+      
+      if (remainingText.length > 0 || !this.usersToRespondTo.has(message.author)) {
         this.usersToRespondTo.add(message.author);
       }
       return true;
@@ -252,44 +299,51 @@ export class MessageHandler {
   }
 
   async handleCommand(message, chat, commandFromAI = null) {
-    const commandParts = commandFromAI
-      ? commandFromAI.slice(1).split(" ")
-      : message.body.slice(1).split(" ");
-    const [command, ...args] = commandParts;
+    const commandText = commandFromAI || message.body;
+    const [command, ...args] = commandText.slice(1).split(" ");
     const commandKey = command.toLowerCase();
+    
+    // Special handling for toggleai command
     if (commandKey === "toggleai") {
       ChatHistoryManager.clearAllHistories();
     }
+    
     try {
+      // Check if command exists and is enabled
       const commandDoc = await Commands.findOne({ name: commandKey });
       if (!commandDoc || !commandDoc.enabled) {
         await message.reply(
           !commandDoc
             ? "Unknown command. Use !help to see available commands."
-            : "This command is currently disabled.",
+            : "This command is currently disabled."
         );
         return;
       }
 
-      if (commandWillRespond(commandKey, args, message.hasQuotedMsg)) {
-        if (AUDIO_COMMANDS.has(commandKey)) {
+      // Set appropriate chat state based on command
+      if (shouldCommandRespond(commandKey, args, message.hasQuotedMsg)) {
+        const config = COMMAND_RESPONSE_CONFIG[commandKey];
+        if (config?.audioResponse) {
           await ChatState.setRecording(chat);
         } else {
           await ChatState.setTyping(chat);
         }
       }
 
+      // Execute command handler
       const handler = commandHandlers[commandKey];
       if (!handler) {
-        logger.error({ command }, "Command handler not found");
+        logger.error({ command: commandKey }, "Command handler not found");
         await message.reply("This command is not implemented yet.");
         return;
       }
 
       await handler(message, args);
+      
+      // Update command usage statistics
       await Commands.updateOne(
         { name: commandKey },
-        { $inc: { usageCount: 1 }, $set: { lastUsed: new Date() } },
+        { $inc: { usageCount: 1 }, $set: { lastUsed: new Date() } }
       );
     } catch (error) {
       logger.error({ err: error }, "Error executing command");
@@ -304,15 +358,17 @@ export class MessageHandler {
       const userId = message.author;
       const { response, command, terminate } = await generateAIResponse(
         message.body,
-        userId,
+        userId
       );
 
       await message.reply(response);
 
+      // Handle command if AI generated one
       if (command) {
         await this.handleCommand(message, chat, command);
       }
 
+      // Terminate conversation if requested
       if (terminate) {
         await message.react("✅");
         this.usersToRespondTo.delete(message.author);
@@ -324,17 +380,6 @@ export class MessageHandler {
     } finally {
       await ChatState.clear(chat);
     }
-  }
-
-  async processQueue() {
-    while (this.messageQueue.length > 0) {
-      const message = this.messageQueue.shift();
-      await this.processMessage(message);
-    }
-  }
-
-  start() {
-    setInterval(() => this.processQueue(), this.processingInterval);
   }
 }
 
