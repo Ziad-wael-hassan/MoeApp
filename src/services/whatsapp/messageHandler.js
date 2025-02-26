@@ -63,17 +63,31 @@ async function isAIEnabled() {
 
 async function handleVoiceNoteTranscription(message) {
   try {
-    if (!message.hasMedia) return;
+    logger.info(`Processing voice note. Message type: ${message.type}, Has media: ${message.hasMedia}`);
+    
+    if (!message.hasMedia) {
+      logger.info('No media found in message');
+      return;
+    }
 
     const media = await message.downloadMedia();
+    logger.info(`Downloaded media with mimetype: ${media.mimetype}`);
+    
+    logger.info('Sending to transcription API...');
     const response = await axios.post(`${FASTAPI_URL}/transcribe_file`, {
       base64_data: media.data
     });
 
     const transcription = response.data.text;
+    logger.info(`Received transcription: ${transcription}`);
     return transcription;
   } catch (error) {
-    logger.error({ err: error }, "Error transcribing voice note");
+    logger.error({ 
+      err: error, 
+      url: `${FASTAPI_URL}/transcribe_file`,
+      messageType: message.type,
+      hasMedia: message.hasMedia 
+    }, "Error transcribing voice note");
     return null;
   }
 }
@@ -231,16 +245,17 @@ export class MessageHandler {
       await ChatState.setTyping(chat);
 
       // Check if the message is a voice note and transcribe it
-      if (message.type === 'ptt' || message.type === 'audio') {
-        const transcription = await handleVoiceNoteTranscription(message);
-        if (transcription) {
-          logger.info(`Transcription: ${transcription}`);
-          await this.handleAIResponse({ ...message, body: transcription }, chat);
-        }
-      } else {
-        await this.handleAIResponse(message, chat);
-      }
-    }
+      if (message.type === 'ptt' || message.type === 'voice') {
+  logger.info(`Received voice message. Type: ${message.type}`);
+  const transcription = await handleVoiceNoteTranscription(message);
+  if (transcription) {
+    logger.info(`Successfully transcribed: ${transcription}`);
+    await this.handleAIResponse({ ...message, body: transcription }, chat);
+  } else {
+    logger.info('No transcription returned');
+    await message.reply("Sorry, I couldn't transcribe your voice note. Please try again.");
+  }
+}
       await ChatState.clear(chat);
     } catch (error) {
       logger.error(`${logContext} Fatal error processing message:`, error);
