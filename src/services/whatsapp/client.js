@@ -50,14 +50,16 @@ const CONFIG = {
       adminOnly: false,
       category: "utility",
       description: "Track a user's stories and receive them in DMs",
-      usage: "!track <@mention or number>\n!track list\n!track stop <@mention or number>",
+      usage:
+        "!track <@mention or number>\n!track list\n!track stop <@mention or number>",
     },
     {
       name: "pfp",
       enabled: true,
       adminOnly: false,
       category: "utility",
-      description: "Retrieves the profile picture of a mentioned user or number",
+      description:
+        "Retrieves the profile picture of a mentioned user or number",
       usage: "!pfp <@mention or number>",
     },
     {
@@ -89,7 +91,8 @@ const CONFIG = {
       enabled: true,
       adminOnly: false,
       category: "media",
-      description: "Downloads and sends a song with its information from a URL or search query",
+      description:
+        "Downloads and sends a song with its information from a URL or search query",
       usage: "!song <URL/song title>",
     },
     {
@@ -113,7 +116,8 @@ const CONFIG = {
       enabled: true,
       adminOnly: false,
       category: "utility",
-      description: "Downloads a file from the provided URL and sends it back to the user",
+      description:
+        "Downloads a file from the provided URL and sends it back to the user",
       usage: "!dl <URL>",
     },
     {
@@ -129,8 +133,10 @@ const CONFIG = {
       enabled: true,
       adminOnly: true,
       category: "admin",
-      description: "Adds a user to the shutup list and replies to their messages with 'shut up <name>' or removes them from the list",
-      usage: "!shutup <mention or phone number> \"<name of the person>\"\n!shutup remove <mention or phone number>",
+      description:
+        "Adds a user to the shutup list and replies to their messages with 'shut up <name>' or removes them from the list",
+      usage:
+        '!shutup <mention or phone number> "<name of the person>"\n!shutup remove <mention or phone number>',
     },
   ],
 };
@@ -198,7 +204,10 @@ class WhatsAppClient {
           await messageHandler.handleMessage(message);
         }
       } catch (error) {
-        logger.error({ err: error, messageId: message.id }, "Error processing message");
+        logger.error(
+          { err: error, messageId: message.id },
+          "Error processing message",
+        );
       }
     });
   }
@@ -251,7 +260,7 @@ class WhatsAppClient {
 
     this.reconnectAttempts++;
     logger.info(
-      `Attempting to reconnect (${this.reconnectAttempts}/${CONFIG.MAX_RECONNECT_ATTEMPTS})`
+      `Attempting to reconnect (${this.reconnectAttempts}/${CONFIG.MAX_RECONNECT_ATTEMPTS})`,
     );
 
     setTimeout(async () => {
@@ -270,18 +279,18 @@ class WhatsAppClient {
    */
   async notifyAdmins(message) {
     const adminPhones = env.ADMIN || [];
-    
+
     const sendResults = await Promise.allSettled(
       adminPhones.map(async (adminPhone) => {
         const chatId = `${adminPhone}@c.us`;
         await this.client.sendMessage(chatId, message);
         return adminPhone;
-      })
+      }),
     );
-    
+
     // Log successes and failures
-    sendResults.forEach(result => {
-      if (result.status === 'fulfilled') {
+    sendResults.forEach((result) => {
+      if (result.status === "fulfilled") {
         logger.info(`Message sent to admin (${result.value})`);
       } else {
         logger.error({ err: result.reason }, `Error sending message to admin`);
@@ -310,7 +319,11 @@ class WhatsAppClient {
       // Process status content
       const { statusContent, media } = await this.processStatusContent(message);
       const timestamp = new Date(message.timestamp * 1000).toLocaleString();
-      const caption = this.formatStatusCaption(contact.pushname, statusContent, timestamp);
+      const caption = this.formatStatusCaption(
+        contact.pushname,
+        statusContent,
+        timestamp,
+      );
 
       // Send to all trackers
       await this.sendStatusToTrackers(trackers, caption, media);
@@ -369,12 +382,12 @@ class WhatsAppClient {
         // Update last checked time
         await StoryTracking.updateOne(
           { _id: tracker._id },
-          { $set: { lastChecked: new Date() } }
+          { $set: { lastChecked: new Date() } },
         );
       } catch (error) {
         logger.error(
           { err: error },
-          `Failed to forward status to ${tracker.trackerNumber}`
+          `Failed to forward status to ${tracker.trackerNumber}`,
         );
       }
     });
@@ -401,8 +414,8 @@ class WhatsAppClient {
             lastUsed: new Date(),
             usageCount: 0,
           },
-        }
-      )
+        },
+      ),
     );
 
     await Promise.all(insertPromises);

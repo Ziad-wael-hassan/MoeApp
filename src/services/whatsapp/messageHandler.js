@@ -15,7 +15,7 @@ const { MessageMedia } = WhatsAppWeb;
 const MESSAGE_LENGTH_THRESHOLD = 300;
 const AUDIO_COMMANDS = new Set(["speak"]);
 const SHUTUP_COOLDOWN = 30000; // 30 seconds
-const FASTAPI_URL = 'https://elghamazy-text.hf.space';
+const FASTAPI_URL = "https://elghamazy-text.hf.space";
 
 // Configuration for command responses
 const COMMAND_RESPONSE_CONFIG = {
@@ -26,7 +26,12 @@ const COMMAND_RESPONSE_CONFIG = {
   pfp: { needsArgs: true, needsQuotedMsg: true, audioResponse: false },
   speak: { needsArgs: false, needsQuotedMsg: true, audioResponse: true },
   img: { needsArgs: true, needsQuotedMsg: false, audioResponse: false },
-  msg: { needsArgs: true, needsQuotedMsg: false, audioResponse: false, minArgs: 2 }
+  msg: {
+    needsArgs: true,
+    needsQuotedMsg: false,
+    audioResponse: false,
+    minArgs: 2,
+  },
 };
 
 /**
@@ -36,15 +41,15 @@ const ChatState = {
   async setTyping(chat) {
     await this.setState(chat, "sendStateTyping");
   },
-  
+
   async setRecording(chat) {
     await this.setState(chat, "sendStateRecording");
   },
-  
+
   async clear(chat) {
     await this.setState(chat, "clearState");
   },
-  
+
   async setState(chat, method) {
     try {
       await chat[method]();
@@ -67,37 +72,46 @@ async function isAIEnabled() {
  */
 async function handleVoiceNoteTranscription(message) {
   try {
-    logger.info(`Processing voice note. Message type: ${message.type}, Has media: ${message.hasMedia}`);
-    
+    logger.info(
+      `Processing voice note. Message type: ${message.type}, Has media: ${message.hasMedia}`,
+    );
+
     if (!message.hasMedia) {
-      logger.info('No media found in message');
+      logger.info("No media found in message");
       return;
     }
 
     const media = await message.downloadMedia();
     logger.info(`Downloaded media with mimetype: ${media.mimetype}`);
-    
-    logger.info('Sending to transcription API...');
+
+    logger.info("Sending to transcription API...");
     // Create a FormData object and append the base64 data
     const formData = new FormData();
-    formData.append('base64_data', media.data);
+    formData.append("base64_data", media.data);
 
-    const response = await axios.post(`${FASTAPI_URL}/transcribe_file`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
+    const response = await axios.post(
+      `${FASTAPI_URL}/transcribe_file`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      },
+    );
 
     const transcription = response.data.text;
     logger.info(`Received transcription: ${transcription}`);
     return transcription;
   } catch (error) {
-    logger.error({ 
-      err: error, 
-      url: `${FASTAPI_URL}/transcribe_file`,
-      messageType: message.type,
-      hasMedia: message.hasMedia 
-    }, "Error transcribing voice note");
+    logger.error(
+      {
+        err: error,
+        url: `${FASTAPI_URL}/transcribe_file`,
+        messageType: message.type,
+        hasMedia: message.hasMedia,
+      },
+      "Error transcribing voice note",
+    );
     return null;
   }
 }
@@ -123,9 +137,9 @@ async function waitForCompleteMessage(client, messageId, maxAttempts = 100) {
 
     previousMessage = currentContent;
     attempt++;
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  
+
   const finalMessage = await client.getMessageById(messageId);
   return finalMessage;
 }
@@ -136,11 +150,15 @@ async function waitForCompleteMessage(client, messageId, maxAttempts = 100) {
 async function generateVoiceResponse(text, message) {
   try {
     const contact = await message.getContact();
-    const isMetaAI = contact.name === "Meta AI" || contact.pushname === "Meta AI";
+    const isMetaAI =
+      contact.name === "Meta AI" || contact.pushname === "Meta AI";
     if (!isMetaAI) return;
 
     const client = whatsappClient.getClient();
-    const reloadedMessage = await waitForCompleteMessage(client, message.id._serialized);
+    const reloadedMessage = await waitForCompleteMessage(
+      client,
+      message.id._serialized,
+    );
     text = reloadedMessage.body;
 
     if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
@@ -148,7 +166,9 @@ async function generateVoiceResponse(text, message) {
       await ChatState.setRecording(chat);
       const { base64, mimeType } = await textToSpeech(text);
       const media = new MessageMedia(mimeType, base64);
-      await message.reply(media, chat.id._serialized, { sendAudioAsVoice: true });
+      await message.reply(media, chat.id._serialized, {
+        sendAudioAsVoice: true,
+      });
     }
   } catch (error) {
     logger.error({ err: error }, "Error generating voice for message");
@@ -161,11 +181,16 @@ async function generateVoiceResponse(text, message) {
 function shouldCommandRespond(command, args, hasQuotedMsg) {
   const config = COMMAND_RESPONSE_CONFIG[command];
   if (!config) return false;
-  
+
   if (config.needsArgs && args.length === 0 && !hasQuotedMsg) return false;
-  if (config.needsQuotedMsg && !hasQuotedMsg && (!args.length || !config.needsArgs)) return false;
+  if (
+    config.needsQuotedMsg &&
+    !hasQuotedMsg &&
+    (!args.length || !config.needsArgs)
+  )
+    return false;
   if (config.minArgs && args.length < config.minArgs) return false;
-  
+
   return true;
 }
 
@@ -206,20 +231,29 @@ export class MessageHandler {
     try {
       const chat = await message.getChat();
       const contact = await message.getContact();
-      const chatId = typeof chat.id === "object" ? chat.id._serialized : chat.id;
-      const authorId = contact.pushname || contact.name || message.author.split("@")[0] || "unknown";
+      const chatId =
+        typeof chat.id === "object" ? chat.id._serialized : chat.id;
+      const authorId =
+        contact.pushname ||
+        contact.name ||
+        message.author.split("@")[0] ||
+        "unknown";
 
       const logContext = [
         chatId ? `[Chat: ${chatId}]` : null,
         authorId ? `[Author: ${authorId}]` : null,
-      ].filter(Boolean).join(" ");
+      ]
+        .filter(Boolean)
+        .join(" ");
 
       // Skip messages that aren't from a group or normal chat
       const isGroupMessage = message.from.includes("@g.us");
       const isNormalChat = message.from.includes("@c.us");
       if (!isGroupMessage && !isNormalChat) return;
 
-      logger.info(`${logContext} Processing message: "${message.body?.substring(0, 50) || '[MEDIA]'}"`);
+      logger.info(
+        `${logContext} Processing message: "${message.body?.substring(0, 50) || "[MEDIA]"}"`,
+      );
 
       // Handle command if message starts with !
       if (message.body?.startsWith("!")) {
@@ -230,7 +264,7 @@ export class MessageHandler {
 
       // Handle shutup response for tracked users
       await this.handleShutupResponse(message, contact);
-      
+
       // Check for media extraction
       const mediaResult = await handleMediaExtraction(message);
       if (mediaResult.processed) {
@@ -250,8 +284,13 @@ export class MessageHandler {
       await generateVoiceResponse(message.body, message);
 
       // Handle voice note transcription
-      if (this.usersToRespondTo.has(message.author) && (message.type === 'ptt' || message.type === 'voice')) {
-        logger.info(`${logContext} Received voice message from user in respond list. Type: ${message.type}`);
+      if (
+        this.usersToRespondTo.has(message.author) &&
+        (message.type === "ptt" || message.type === "voice")
+      ) {
+        logger.info(
+          `${logContext} Received voice message from user in respond list. Type: ${message.type}`,
+        );
         await this.handleVoiceMessage(message, chat);
         return;
       }
@@ -268,7 +307,9 @@ export class MessageHandler {
       try {
         const chat = await message.getChat();
         await ChatState.clear(chat);
-        await message.reply("I encountered an error processing your message. Please try again later.");
+        await message.reply(
+          "I encountered an error processing your message. Please try again later.",
+        );
       } catch (replyError) {
         logger.error("Failed to send error message:", replyError);
       }
@@ -277,37 +318,51 @@ export class MessageHandler {
 
   // New method to specifically handle voice messages
   async handleVoiceMessage(message, chat) {
-  try {
-    logger.info(`Received voice message. Type: ${message.type}`);
-    const transcription = await handleVoiceNoteTranscription(message);
-    
-    if (transcription) {
-      logger.info(`Successfully transcribed: ${transcription}`);
-      // Instead of creating a new object, modify the existing message
-      const originalBody = message.body;
-      message.body = transcription;
-      
-      await this.handleAIResponse(message, chat);
-      
-      // Restore original body if needed
-      message.body = originalBody;
-    } else {
-      logger.info('No transcription returned');
-      // Use the original message object
-      await message.reply("Sorry, I couldn't transcribe your voice note. Please try again.");
-    }
-  } catch (error) {
-    logger.error({ err: error }, "Error handling voice message");
-    await message.reply("An error occurred while processing your voice message.");
-  }
-}
+    try {
+      logger.info(`Received voice message. Type: ${message.type}`);
+      const isReplyToBot =
+        message.hasQuotedMsg &&
+        (await message.getQuotedMessage()).from === message.to;
 
+      if (!isReplyToBot) {
+        logger.info("Voice note ignored - not a reply to bot message");
+        return;
+      }
+
+      const transcription = await handleVoiceNoteTranscription(message);
+
+      if (transcription) {
+        logger.info(`Successfully transcribed: ${transcription}`);
+        // Instead of creating a new object, modify the existing message
+        const originalBody = message.body;
+        message.body = transcription;
+
+        await this.handleAIResponse(message, chat);
+
+        // Restore original body if needed
+        message.body = originalBody;
+      } else {
+        logger.info("No transcription returned");
+        // Use the original message object
+        await message.reply(
+          "Sorry, I couldn't transcribe your voice note. Please try again.",
+        );
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Error handling voice message");
+      await message.reply(
+        "An error occurred while processing your voice message.",
+      );
+    }
+  }
 
   async handleShutupResponse(message, contact) {
     // Skip if message is a command
     if (message.body?.startsWith("!")) return;
-    
-    const shutupUser = await ShutupUsers.findOne({ phoneNumber: contact.number });
+
+    const shutupUser = await ShutupUsers.findOne({
+      phoneNumber: contact.number,
+    });
     if (shutupUser) {
       const now = Date.now();
       const lastTime = this.shutupCooldowns.get(contact.number) || 0;
@@ -321,9 +376,11 @@ export class MessageHandler {
   async shouldRespond(message) {
     try {
       const aiEnabled = await isAIEnabled();
-      const isReplyToBot = message.hasQuotedMsg && 
-                           (await message.getQuotedMessage()).from === message.to;
-      const isMediaMessage = message.hasMedia && message.type !== 'ptt' && message.type !== 'voice';
+      const isReplyToBot =
+        message.hasQuotedMsg &&
+        (await message.getQuotedMessage()).from === message.to;
+      const isMediaMessage =
+        message.hasMedia && message.type !== "ptt" && message.type !== "voice";
 
       return (
         aiEnabled &&
@@ -340,11 +397,14 @@ export class MessageHandler {
   checkBotMention(message) {
     const isMentioned = message.mentionedIds?.includes(message.to);
     if (isMentioned) {
-      const messageText = message.body?.trim() || '';
+      const messageText = message.body?.trim() || "";
       const mentionText = `@${message.to.split("@")[0]}`;
       const remainingText = messageText.replace(mentionText, "").trim();
-      
-      if (remainingText.length > 0 || !this.usersToRespondTo.has(message.author)) {
+
+      if (
+        remainingText.length > 0 ||
+        !this.usersToRespondTo.has(message.author)
+      ) {
         this.usersToRespondTo.add(message.author);
       }
       return true;
@@ -353,17 +413,17 @@ export class MessageHandler {
   }
 
   async handleCommand(message, chat, commandFromAI = null) {
-    const commandText = commandFromAI || message.body || '';
-    if (!commandText.startsWith('!')) return;
-    
+    const commandText = commandFromAI || message.body || "";
+    if (!commandText.startsWith("!")) return;
+
     const [command, ...args] = commandText.slice(1).split(" ");
     const commandKey = command.toLowerCase();
-    
+
     // Special handling for toggleai command
     if (commandKey === "toggleai") {
       ChatHistoryManager.clearAllHistories();
     }
-    
+
     try {
       // Check if command exists and is enabled
       const commandDoc = await Commands.findOne({ name: commandKey });
@@ -371,7 +431,7 @@ export class MessageHandler {
         await message.reply(
           !commandDoc
             ? "Unknown command. Use !help to see available commands."
-            : "This command is currently disabled."
+            : "This command is currently disabled.",
         );
         return;
       }
@@ -395,11 +455,11 @@ export class MessageHandler {
       }
 
       await handler(message, args);
-      
+
       // Update command usage statistics
       await Commands.updateOne(
         { name: commandKey },
-        { $inc: { usageCount: 1 }, $set: { lastUsed: new Date() } }
+        { $inc: { usageCount: 1 }, $set: { lastUsed: new Date() } },
       );
     } catch (error) {
       logger.error({ err: error }, "Error executing command");
@@ -414,7 +474,7 @@ export class MessageHandler {
       const userId = message.author;
       const { response, command, terminate } = await generateAIResponse(
         message.body,
-        userId
+        userId,
       );
 
       await message.reply(response);
