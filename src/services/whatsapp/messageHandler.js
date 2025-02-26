@@ -162,7 +162,7 @@ export class MessageHandler {
   }
 
   async handleMessage(message) {
-    if (message?.body) {
+    if (message?.body || message?.hasMedia) {
       this.messageQueue.push(message);
     }
   }
