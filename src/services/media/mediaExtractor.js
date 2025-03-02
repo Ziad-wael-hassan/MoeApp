@@ -3,7 +3,8 @@ import { logger } from "../../utils/logger.js";
 import WhatsAppWeb from "whatsapp-web.js";
 import axios from "axios";
 import { MEDIA_PATTERNS } from "./mediaPatterns.js";
-import fs from "fs/promises";
+import fs from "fs";
+const fsPromises = fs.promises;
 import path from "path";
 import os from "os";
 import crypto from "crypto";
@@ -208,7 +209,7 @@ async function downloadMedia(url) {
       });
       
       // Read the file and convert to base64
-      const fileBuffer = await fs.readFile(tempFilePath);
+      const fileBuffer = await fsPromises.readFile(tempFilePath);
       const base64 = fileBuffer.toString("base64");
       
       return { 
@@ -276,7 +277,7 @@ async function cleanupTempFile(filePath) {
   if (!filePath) return;
   
   try {
-    await fs.unlink(filePath);
+    await fsPromises.unlink(filePath);
     logger.debug(`Cleaned up temporary file: ${filePath}`);
   } catch (error) {
     logger.warn(`Failed to clean up temporary file ${filePath}: ${error.message}`);
