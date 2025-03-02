@@ -393,24 +393,27 @@ export class MessageHandler {
       return false;
     }
   }
-
+  
   checkBotMention(message) {
     const isMentioned = message.mentionedIds?.includes(message.to);
     if (isMentioned) {
-      const messageText = message.body?.trim() || "";
-      const mentionText = `@${message.to.split("@")[0]}`;
-      const remainingText = messageText.replace(mentionText, "").trim();
+        const messageText = message.body?.trim() || "";
+        const mentionText = `@${message.to.split("@")[0]}`;
+        
+        // Replace the mention with "Hey!" and trim any extra whitespace
+        message.body = messageText.replace(mentionText, "Hey!").trim();
+        const remainingText = message.body;
 
-      if (
-        remainingText.length > 0 ||
-        !this.usersToRespondTo.has(message.author)
-      ) {
-        this.usersToRespondTo.add(message.author);
-      }
-      return true;
+        if (
+            remainingText.length > 0 ||
+            !this.usersToRespondTo.has(message.author)
+        ) {
+            this.usersToRespondTo.add(message.author);
+        }
+        return true;
     }
     return false;
-  }
+}
 
   async handleCommand(message, chat, commandFromAI = null) {
     const commandText = commandFromAI || message.body || "";
