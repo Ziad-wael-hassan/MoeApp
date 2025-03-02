@@ -161,7 +161,7 @@ async function generateVoiceResponse(text, message) {
     );
     text = reloadedMessage.body;
 
-    if (text.length >= MESSAGE_LENGTH_THRESHOLD) {
+    if (text.length <= MESSAGE_LENGTH_THRESHOLD) {
       const chat = await message.getChat();
       await ChatState.setRecording(chat);
       const { base64, mimeType } = await textToSpeech(text);
