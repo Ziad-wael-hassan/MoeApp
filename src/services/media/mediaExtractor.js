@@ -348,7 +348,7 @@ async function sendMedia(url, message) {
           // Check mime type and send accordingly
           let success = false;
           if (mimeType.startsWith("audio/")) {
-            success = await safelySendMedia(message, media, { sendAudioAsVoice: false });
+            success = await safelySendMedia(message, media);
           } else {
             success = await safelySendMedia(message, media);
           }
