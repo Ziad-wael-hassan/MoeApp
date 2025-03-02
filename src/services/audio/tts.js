@@ -88,12 +88,6 @@ function validateAndCleanText(text) {
     throw new ValidationError("Text is empty after cleaning");
   }
 
-  if (cleanText.length > CONFIG.MAX_TEXT_LENGTH) {
-    throw new ValidationError(
-      `Text exceeds maximum length of ${CONFIG.MAX_TEXT_LENGTH} characters`,
-    );
-  }
-
   return cleanText;
 }
 
