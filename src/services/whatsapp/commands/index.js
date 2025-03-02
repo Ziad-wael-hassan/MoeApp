@@ -153,6 +153,47 @@ async function fetchFile(url) {
   }
 }
 
+async function notifyAndDownloadSong(message, songData) {
+  // Notify the user and process the download.
+  const { title, artist } = songData;
+  await message.reply(
+    `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
+  );
+  await processSongDownload(message, songData);
+}
+
+async function waitForSongSelection(message, resultsMessage, results) {
+  // Wait for the user to reply with a valid song selection.
+  return new Promise((resolve, reject) => {
+    const handler = async (reply) => {
+      try {
+        if (!reply.hasQuotedMsg) return;
+        const quotedMessage = await reply.getQuotedMessage();
+        if (
+          quotedMessage.id._serialized !== resultsMessage.id._serialized ||
+          reply.author !== message.author
+        ) {
+          return;
+        }
+        const selection = parseInt(reply.body);
+        if (!isNaN(selection) && selection > 0 && selection <= results.length) {
+          message.client.removeListener("message", handler);
+          resolve(results[selection - 1]);
+        }
+      } catch (error) {
+        logger.error(error, "Error handling reply");
+      }
+    };
+
+    message.client.on("message", handler);
+
+    setTimeout(() => {
+      message.client.removeListener("message", handler);
+      reject(new Error("Selection timed out"));
+    }, SONG_SELECTION_TIMEOUT);
+  });
+}
+
 async function addShutupUser(message, args) {
   let targetContact;
   const name = args.slice(1).join(" ").replace(/"/g, "");
@@ -355,6 +396,8 @@ export const commandHandlers = {
 
     await message.reply(report);
   },
+  // Refactored Song Command
+
   async song(message, args) {
     if (args.length === 0) {
       await message.reply("Please provide a song URL or title.");
@@ -368,162 +411,74 @@ export const commandHandlers = {
     try {
       await chat.sendStateTyping();
 
-      // Check if the query is a Spotify URL.
+      // Process Spotify URL directly.
       if (query.includes("spotify.com/track/")) {
-        try {
-          const response = await axios.get(
-            "https://elghamazy-moeify.hf.space/getSong",
-            {
-              params: { url: query },
-            },
-          );
-
-          if (response.data) {
-            const { title, artist } = response.data;
-            // Notify user about the song details.
-            await message.reply(
-              `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
-            );
-            await processSongDownload(message, response.data);
-            return;
-          }
-        } catch (error) {
-          logger.error(error, "Failed to fetch song from URL", { url: query });
-          throw new Error("Could not process Spotify URL");
-        }
+        const songData = await getSongDetails(query);
+        await notifyAndDownloadSong(message, songData);
+        return;
       }
 
       // Search for songs.
-      try {
-        const searchResponse = await axios.get(
-          "https://elghamazy-moeify.hf.space/search",
-          {
-            params: { query },
-          },
-        );
+      const searchResponse = await axios.get(
+        "https://elghamazy-moeify.hf.space/search",
+        {
+          params: { query },
+        },
+      );
 
-        if (
-          !searchResponse.data.results ||
-          searchResponse.data.results.length === 0
-        ) {
-          await message.reply("No songs found matching your query.");
-          return;
-        }
-
-        const results = searchResponse.data.results;
-
-        // If only one result, auto-download.
-        if (results.length === 1) {
-          // Fetch full song details using the provided URL.
-          const songDetailsResponse = await axios.get(
-            "https://elghamazy-moeify.hf.space/getSong",
-            {
-              params: { url: results[0].url },
-            },
-          );
-          if (!songDetailsResponse.data) {
-            throw new Error("Failed to get song details");
-          }
-          const { title, artist } = songDetailsResponse.data;
-          // Notify user before downloading.
-          await message.reply(
-            `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
-          );
-          await processSongDownload(message, songDetailsResponse.data);
-          return;
-        }
-
-        // Multiple results: send selection message.
-        resultsMessage = await message.reply(formatSearchResults(results));
-
-        // Wait for user selection.
-        const { selectedTrack } = await new Promise((resolve, reject) => {
-          const handler = async (reply) => {
-            try {
-              if (!reply.hasQuotedMsg) return;
-
-              const quotedMessage = await reply.getQuotedMessage();
-              if (
-                quotedMessage.id._serialized !==
-                  resultsMessage.id._serialized ||
-                reply.author !== message.author
-              )
-                return;
-
-              const selection = parseInt(reply.body);
-              if (
-                !isNaN(selection) &&
-                selection > 0 &&
-                selection <= results.length
-              ) {
-                message.client.removeListener("message", handler);
-                resolve({ selectedTrack: results[selection - 1] });
-              }
-            } catch (error) {
-              logger.error(error, "Error handling reply");
-            }
-          };
-
-          message.client.on("message", handler);
-
-          setTimeout(() => {
-            message.client.removeListener("message", handler);
-            reject(new Error("Selection timed out"));
-          }, SONG_SELECTION_TIMEOUT);
-        });
-
-        // Inform user that song details are being fetched.
-        await resultsMessage.edit("*⏳ Fetching song details...*");
-
-        // Get full song details.
-        const songDetailsResponse = await axios.get(
-          "https://elghamazy-moeify.hf.space/getSong",
-          {
-            params: { url: selectedTrack.url },
-          },
-        );
-
-        if (!songDetailsResponse.data) {
-          throw new Error("Failed to get song details");
-        }
-
-        // Inform user that the download is starting.
-        await resultsMessage.edit("*⏬ Downloading song...*");
-
-        // Notify the user of the song details.
-        const { title, artist } = songDetailsResponse.data;
-        await message.reply(
-          `*Now downloading:*\n*Title:* ${title}\n*Artist:* ${artist}`,
-        );
-
-        // Process the download.
-        await processSongDownload(message, songDetailsResponse.data);
-
-        // Final success message.
-        await resultsMessage.edit(
-          `*✅ Download Completed!*\n\n*Title:* ${title}\n*Artist:* ${artist}\n\nEnjoy your music!`,
-        );
-      } catch (error) {
-        if (resultsMessage) {
-          if (error.message === "Selection timed out") {
-            await resultsMessage.edit(
-              "❌ Song selection timed out. Please try again.",
-            );
-          } else {
-            await resultsMessage.edit(
-              "❌ Failed to process your request. Please try again.",
-            );
-          }
-        }
-        throw error;
+      if (
+        !searchResponse.data.results ||
+        searchResponse.data.results.length === 0
+      ) {
+        await message.reply("No songs found matching your query.");
+        return;
       }
+
+      const results = searchResponse.data.results;
+
+      // If only one result, auto-download.
+      if (results.length === 1) {
+        const songData = await getSongDetails(results[0].url);
+        await notifyAndDownloadSong(message, songData);
+        return;
+      }
+
+      // Multiple results: send selection message.
+      resultsMessage = await message.reply(formatSearchResults(results));
+
+      // Wait for user selection.
+      const selectedTrack = await waitForSongSelection(
+        message,
+        resultsMessage,
+        results,
+      );
+
+      // Fetch song details and download.
+      await resultsMessage.edit("*⏳ Fetching song details...*");
+      const songData = await getSongDetails(selectedTrack.url);
+      await resultsMessage.edit("*⏬ Downloading song...*");
+      await notifyAndDownloadSong(message, songData);
+      await resultsMessage.edit(
+        `*✅ Download Completed!*\n\n*Title:* ${songData.title}\n*Artist:* ${songData.artist}\n\nEnjoy your music!`,
+      );
     } catch (error) {
+      if (resultsMessage) {
+        if (error.message === "Selection timed out") {
+          await resultsMessage.edit(
+            "❌ Song selection timed out. Please try again.",
+          );
+          return;
+        } else {
+          await resultsMessage.edit(
+            "❌ Failed to process your request. Please try again.",
+          );
+        }
+      }
       logger.error(error, "Error in song command", {
         query,
         errorResponse: error.response?.data,
         errorStatus: error.response?.status,
       });
-
       if (!resultsMessage) {
         let errorMessage = "Failed to process the song request.";
         if (error.response) {
