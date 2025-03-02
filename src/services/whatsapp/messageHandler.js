@@ -137,7 +137,7 @@ async function waitForCompleteMessage(client, messageId, maxAttempts = 100) {
 
     previousMessage = currentContent;
     attempt++;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   const finalMessage = await client.getMessageById(messageId);
