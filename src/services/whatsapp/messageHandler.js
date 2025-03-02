@@ -161,15 +161,14 @@ async function generateVoiceResponse(text, message) {
     );
     text = reloadedMessage.body;
 
-    if (text.length <= MESSAGE_LENGTH_THRESHOLD) {
-      const chat = await message.getChat();
-      await ChatState.setRecording(chat);
-      const { base64, mimeType } = await textToSpeech(text);
-      const media = new MessageMedia(mimeType, base64);
-      await message.reply(media, chat.id._serialized, {
-        sendAudioAsVoice: true,
-      });
-    }
+    // Remove the length check and always generate voice response for Meta AI messages
+    const chat = await message.getChat();
+    await ChatState.setRecording(chat);
+    const { base64, mimeType } = await textToSpeech(text);
+    const media = new MessageMedia(mimeType, base64);
+    await message.reply(media, chat.id._serialized, {
+      sendAudioAsVoice: true,
+    });
   } catch (error) {
     logger.error({ err: error }, "Error generating voice for message");
   }
@@ -393,27 +392,27 @@ export class MessageHandler {
       return false;
     }
   }
-  
+
   checkBotMention(message) {
     const isMentioned = message.mentionedIds?.includes(message.to);
     if (isMentioned) {
-        const messageText = message.body?.trim() || "";
-        const mentionText = `@${message.to.split("@")[0]}`;
-        
-        // Replace the mention with "Hey!" and trim any extra whitespace
-        message.body = messageText.replace(mentionText, "Hey!").trim();
-        const remainingText = message.body;
+      const messageText = message.body?.trim() || "";
+      const mentionText = `@${message.to.split("@")[0]}`;
 
-        if (
-            remainingText.length > 0 ||
-            !this.usersToRespondTo.has(message.author)
-        ) {
-            this.usersToRespondTo.add(message.author);
-        }
-        return true;
+      // Replace the mention with "Hey!" and trim any extra whitespace
+      message.body = messageText.replace(mentionText, "Hey!").trim();
+      const remainingText = message.body;
+
+      if (
+        remainingText.length > 0 ||
+        !this.usersToRespondTo.has(message.author)
+      ) {
+        this.usersToRespondTo.add(message.author);
+      }
+      return true;
     }
     return false;
-}
+  }
 
   async handleCommand(message, chat, commandFromAI = null) {
     const commandText = commandFromAI || message.body || "";
