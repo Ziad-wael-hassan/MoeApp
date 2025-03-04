@@ -24,9 +24,7 @@ export async function generateAIResponse(userMessage, userId) {
       `${AI_CONFIG.prompt.base}\n\n${JSON.stringify(AI_CONFIG.prompt.examples, null, 2)}\n\nUser: "${userMessage}"`,
     );
 
-    // Check if the message is from a private chat using the userId
-    const isPrivateChat = !userId.includes("@g.us");
-    return processResponse(result, userMessage, userId, isPrivateChat);
+    return processResponse(result, userMessage, userId);
   } catch (error) {
     logger.error("AI generation error:", error);
     return getErrorResponse();
@@ -57,7 +55,7 @@ function addToHistory(userId, role, text) {
   }
 }
 
-function processResponse(result, userMessage, userId, isPrivateChat) {
+function processResponse(result, userMessage, userId) {
   try {
     const responseText = result.response.text().trim();
     const parsedResponse = JSON.parse(responseText);
@@ -66,16 +64,6 @@ function processResponse(result, userMessage, userId, isPrivateChat) {
     addToHistory(userId, "user", userMessage);
     addToHistory(userId, "model", parsedResponse.response);
 
-    // If it's a private chat, never terminate the conversation
-    if (isPrivateChat) {
-      return {
-        response: parsedResponse.response || "خليك كده متكلمنيش 🙄",
-        command: parsedResponse.command || null,
-        terminate: false, // Always false for private chats
-      };
-    }
-
-    // For group chats, keep the original behavior
     return {
       response: parsedResponse.response || "خليك كده متكلمنيش 🙄",
       command: parsedResponse.command || null,
@@ -85,4 +73,13 @@ function processResponse(result, userMessage, userId, isPrivateChat) {
     logger.error("Response processing error:", error);
     return getErrorResponse();
   }
+}
+
+// Add the missing getErrorResponse function
+function getErrorResponse() {
+  return {
+    response: "مش ناقصه صداع بقا",
+    command: null,
+    terminate: false,
+  };
 }

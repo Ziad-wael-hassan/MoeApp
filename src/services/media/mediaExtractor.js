@@ -13,11 +13,11 @@ const { MessageMedia } = WhatsAppWeb;
 
 // Configuration constants
 const CONFIG = {
-  PROCESSING_TIMEOUT: 60000,      // 60 seconds
-  MAX_RETRIES: 3,                 // Maximum number of retry attempts
-  RETRY_DELAY: 2000,              // Base delay between retries (ms)
+  PROCESSING_TIMEOUT: 60000, // 60 seconds
+  MAX_RETRIES: 3, // Maximum number of retry attempts
+  RETRY_DELAY: 2000, // Base delay between retries (ms)
   MAX_DOWNLOAD_SIZE: 50 * 1024 * 1024, // 50MB max
-  DEFAULT_TIMEOUT: 30000          // 30 seconds
+  DEFAULT_TIMEOUT: 30000, // 30 seconds
 };
 
 // Configure axios instance with improved settings
@@ -25,7 +25,8 @@ const axiosInstance = axios.create({
   timeout: CONFIG.DEFAULT_TIMEOUT,
   maxRedirects: 10,
   headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     Accept: "image/*, video/*, audio/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
@@ -53,28 +54,30 @@ async function withRetry(fn, options = {}) {
   } = options;
 
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     try {
       return await fn();
     } catch (error) {
       lastError = error;
-      
+
       // Check if we should retry based on the error
       if (attempt <= maxRetries && retryCondition(error)) {
         // Calculate exponential backoff delay
         const delay = retryDelay * Math.pow(2, attempt - 1);
-        
+
         // Log retry attempt
-        logger.info(`Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay. Error: ${error.message}`);
-        
+        logger.info(
+          `Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay. Error: ${error.message}`,
+        );
+
         // Execute onRetry callback if provided
-        if (onRetry && typeof onRetry === 'function') {
+        if (onRetry && typeof onRetry === "function") {
           onRetry(error, attempt);
         }
-        
+
         // Wait before next retry
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
         // We've exceeded max retries or condition says don't retry
         throw error;
@@ -123,14 +126,16 @@ async function extractMediaWithCobalt(url, options = {}) {
       retryCondition: (error) => {
         return (
           !error.response || // Network error
-          error.code === 'ECONNABORTED' || // Timeout
+          error.code === "ECONNABORTED" || // Timeout
           (error.response && error.response.status >= 500) // Server error
         );
       },
       onRetry: (error, attempt) => {
-        logger.warn(`Cobalt API retry ${attempt} for URL: ${url}. Error: ${error.message}`);
-      }
-    }
+        logger.warn(
+          `Cobalt API retry ${attempt} for URL: ${url}. Error: ${error.message}`,
+        );
+      },
+    },
   );
 }
 
@@ -140,7 +145,7 @@ async function extractMediaWithCobalt(url, options = {}) {
  * @returns {string|null} - Extracted URL or null
  */
 function extractUrl(messageBody) {
-  if (!messageBody || typeof messageBody !== 'string') return null;
+  if (!messageBody || typeof messageBody !== "string") return null;
 
   for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
     const match = messageBody.match(pattern);
@@ -156,23 +161,34 @@ function extractUrl(messageBody) {
  */
 function generateTempFilePath(mimeType) {
   const tempDir = os.tmpdir();
-  const randomId = crypto.randomBytes(16).toString('hex');
-  
+  const randomId = crypto.randomBytes(16).toString("hex");
+
   // Determine file extension based on MIME type
-  let extension = '.bin';
-  if (mimeType.startsWith('image/')) {
-    extension = mimeType.includes('png') ? '.png' : 
-                mimeType.includes('gif') ? '.gif' : 
-                mimeType.includes('webp') ? '.webp' : '.jpg';
-  } else if (mimeType.startsWith('video/')) {
-    extension = mimeType.includes('mp4') ? '.mp4' : 
-                mimeType.includes('webm') ? '.webm' : '.mp4';
-  } else if (mimeType.startsWith('audio/')) {
-    extension = mimeType.includes('mp3') ? '.mp3' : 
-                mimeType.includes('ogg') ? '.ogg' : 
-                mimeType.includes('wav') ? '.wav' : '.mp3';
+  let extension = ".bin";
+  if (mimeType.startsWith("image/")) {
+    extension = mimeType.includes("png")
+      ? ".png"
+      : mimeType.includes("gif")
+        ? ".gif"
+        : mimeType.includes("webp")
+          ? ".webp"
+          : ".jpg";
+  } else if (mimeType.startsWith("video/")) {
+    extension = mimeType.includes("mp4")
+      ? ".mp4"
+      : mimeType.includes("webm")
+        ? ".webm"
+        : ".mp4";
+  } else if (mimeType.startsWith("audio/")) {
+    extension = mimeType.includes("mp3")
+      ? ".mp3"
+      : mimeType.includes("ogg")
+        ? ".ogg"
+        : mimeType.includes("wav")
+          ? ".wav"
+          : ".mp3";
   }
-  
+
   return path.join(tempDir, `whatsapp-media-${randomId}${extension}`);
 }
 
@@ -192,47 +208,50 @@ async function downloadMedia(url) {
         timeout: CONFIG.PROCESSING_TIMEOUT,
       });
 
-      const mimeType = response.headers["content-type"] || "application/octet-stream";
+      const mimeType =
+        response.headers["content-type"] || "application/octet-stream";
       const tempFilePath = generateTempFilePath(mimeType);
-      
+
       // Create write stream to file
       const writer = fs.createWriteStream(tempFilePath);
-      
+
       // Pipe the response data to the file
       response.data.pipe(writer);
-      
+
       // Wait for download to complete
       await new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-        response.data.on('error', reject);
+        writer.on("finish", resolve);
+        writer.on("error", reject);
+        response.data.on("error", reject);
       });
-      
+
       // Read the file and convert to base64
       const fileBuffer = await fsPromises.readFile(tempFilePath);
       const base64 = fileBuffer.toString("base64");
-      
-      return { 
-        base64, 
+
+      return {
+        base64,
         mimeType,
-        tempFilePath // Include the temp file path for later cleanup
+        tempFilePath, // Include the temp file path for later cleanup
       };
     },
     {
       retryCondition: (error) => {
         // Check if error is "stream has been aborted" or other transient errors
         return (
-          error.code === 'ERR_BAD_RESPONSE' ||
-          error.code === 'ECONNABORTED' ||
-          error.message.includes('timeout') ||
-          error.message.includes('stream has been aborted') ||
+          error.code === "ERR_BAD_RESPONSE" ||
+          error.code === "ECONNABORTED" ||
+          error.message.includes("timeout") ||
+          error.message.includes("stream has been aborted") ||
           (error.response && error.response.status >= 500)
         );
       },
       onRetry: (error, attempt) => {
-        logger.warn(`Media download retry ${attempt} for URL: ${url}. Error: ${error.message}`);
-      }
-    }
+        logger.warn(
+          `Media download retry ${attempt} for URL: ${url}. Error: ${error.message}`,
+        );
+      },
+    },
   );
 }
 
@@ -257,11 +276,11 @@ async function safelySendMedia(message, media, options = {}) {
           return (
             !error.message.includes("Evaluation failed") &&
             (error.message.includes("timeout") ||
-             error.message.includes("network") ||
-             error.message.includes("ECONNRESET"))
+              error.message.includes("network") ||
+              error.message.includes("ECONNRESET"))
           );
-        }
-      }
+        },
+      },
     );
   } catch (error) {
     logger.error(`Failed to send media after retries: ${error.message}`);
@@ -275,12 +294,14 @@ async function safelySendMedia(message, media, options = {}) {
  */
 async function cleanupTempFile(filePath) {
   if (!filePath) return;
-  
+
   try {
     await fsPromises.unlink(filePath);
     logger.debug(`Cleaned up temporary file: ${filePath}`);
   } catch (error) {
-    logger.warn(`Failed to clean up temporary file ${filePath}: ${error.message}`);
+    logger.warn(
+      `Failed to clean up temporary file ${filePath}: ${error.message}`,
+    );
   }
 }
 
@@ -292,7 +313,7 @@ async function cleanupTempFile(filePath) {
  */
 async function sendMedia(url, message) {
   if (!url || !message) return false;
-  
+
   // Array to track temporary files for cleanup
   const tempFiles = [];
 
@@ -308,11 +329,13 @@ async function sendMedia(url, message) {
       for (const item of mediaData.picker) {
         if (item.type === "photo" && item.url) {
           try {
-            const { base64, mimeType, tempFilePath } = await downloadMedia(item.url);
+            const { base64, mimeType, tempFilePath } = await downloadMedia(
+              item.url,
+            );
             if (tempFilePath) tempFiles.push(tempFilePath);
-            
+
             logger.debug(
-              `Downloaded media to ${tempFilePath} - URL: ${item.url}, MIME type: ${mimeType}, size: ${base64.length} bytes`
+              `Downloaded media to ${tempFilePath} - URL: ${item.url}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
             );
 
             const media = new MessageMedia(mimeType, base64);
@@ -332,17 +355,18 @@ async function sendMedia(url, message) {
 
       for (const mediaUrl of mediaUrls) {
         try {
-          const { base64, mimeType, tempFilePath } = await downloadMedia(mediaUrl);
+          const { base64, mimeType, tempFilePath } =
+            await downloadMedia(mediaUrl);
           if (tempFilePath) tempFiles.push(tempFilePath);
-          
+
           logger.debug(
-            `Downloaded media to ${tempFilePath} - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`
+            `Downloaded media to ${tempFilePath} - URL: ${mediaUrl}, MIME type: ${mimeType}, size: ${base64.length} bytes`,
           );
 
           const media = new MessageMedia(
             mimeType,
             base64,
-            mediaData.filename || undefined
+            mediaData.filename || undefined,
           );
 
           // Check mime type and send accordingly
@@ -352,10 +376,12 @@ async function sendMedia(url, message) {
           } else {
             success = await safelySendMedia(message, media);
           }
-          
+
           if (success) successCount++;
         } catch (urlError) {
-          logger.error(`Error processing media URL ${mediaUrl}: ${urlError.message}`);
+          logger.error(
+            `Error processing media URL ${mediaUrl}: ${urlError.message}`,
+          );
           // Continue with next URL even if one fails
         }
       }
@@ -367,7 +393,7 @@ async function sendMedia(url, message) {
     return false;
   } finally {
     // Clean up all temporary files
-    await Promise.all(tempFiles.map(filePath => cleanupTempFile(filePath)));
+    await Promise.all(tempFiles.map((filePath) => cleanupTempFile(filePath)));
   }
 }
 
@@ -394,28 +420,37 @@ export async function handleMediaExtraction(message) {
     }
 
     // Process and send media with timeout protection
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Media processing timeout')), CONFIG.PROCESSING_TIMEOUT * 1.5)
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Media processing timeout")),
+        CONFIG.PROCESSING_TIMEOUT * 1.5,
+      ),
     );
-    
+
     const processingPromise = sendMedia(url, message);
-    
+
     // Race between processing and timeout
-    const success = await Promise.race([processingPromise, timeoutPromise])
-      .catch(error => {
-        logger.error(`Media processing error or timeout: ${error.message}`);
-        return false;
-      });
+    const success = await Promise.race([
+      processingPromise,
+      timeoutPromise,
+    ]).catch((error) => {
+      logger.error(`Media processing error or timeout: ${error.message}`);
+      return false;
+    });
 
     return {
       processed: success,
       url,
     };
   } catch (error) {
-    logger.error(`Error in handling media extraction: ${error.message}`, { error });
+    logger.error(`Error in handling media extraction: ${error.message}`, {
+      error,
+    });
     // Try to notify user of failure if possible
     try {
-      await message.reply("Sorry, I couldn't process that media link. Please try again later.");
+      await message.reply(
+        "Sorry, I couldn't process that media link. Please try again later.",
+      );
     } catch (replyError) {
       // Ignore errors when trying to send failure message
     }

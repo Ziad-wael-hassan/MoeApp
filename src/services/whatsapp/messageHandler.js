@@ -371,16 +371,22 @@ export class MessageHandler {
       }
     }
   }
- 
-    async shouldRespond(message) {
+
+  async shouldRespond(message) {
     try {
       const aiEnabled = await isAIEnabled();
       const isMediaMessage =
         message.hasMedia && message.type !== "ptt" && message.type !== "voice";
-      const isPrivateChat = !message.from.includes("@g.us");
+
+      // Check if message.from exists before using includes
+      const isPrivateChat = message.from && !message.from.includes("@g.us");
 
       // For private chats - always respond if AI is enabled and it's not a media message
       if (isPrivateChat) {
+        // Add user to respondTo list if not already there
+        if (!this.usersToRespondTo.has(message.author)) {
+          this.usersToRespondTo.add(message.author);
+        }
         return aiEnabled && !isMediaMessage;
       }
 
@@ -388,7 +394,7 @@ export class MessageHandler {
       const isReplyToBot =
         message.hasQuotedMsg &&
         (await message.getQuotedMessage()).from === message.to;
-        
+
       return (
         aiEnabled &&
         this.usersToRespondTo.has(message.author) &&
@@ -479,7 +485,7 @@ export class MessageHandler {
     }
   }
 
-    async handleAIResponse(message, chat) {
+  async handleAIResponse(message, chat) {
     try {
       const userId = message.author;
       const isPrivateChat = !message.from.includes("@g.us");
