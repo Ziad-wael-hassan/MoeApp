@@ -371,16 +371,24 @@ export class MessageHandler {
       }
     }
   }
-
-  async shouldRespond(message) {
+ 
+    async shouldRespond(message) {
     try {
       const aiEnabled = await isAIEnabled();
+      const isMediaMessage =
+        message.hasMedia && message.type !== "ptt" && message.type !== "voice";
+      const isPrivateChat = !message.from.includes("@g.us");
+
+      // For private chats - always respond if AI is enabled and it's not a media message
+      if (isPrivateChat) {
+        return aiEnabled && !isMediaMessage;
+      }
+
+      // For group chats - keep existing behavior
       const isReplyToBot =
         message.hasQuotedMsg &&
         (await message.getQuotedMessage()).from === message.to;
-      const isMediaMessage =
-        message.hasMedia && message.type !== "ptt" && message.type !== "voice";
-
+        
       return (
         aiEnabled &&
         this.usersToRespondTo.has(message.author) &&
