@@ -471,9 +471,10 @@ export class MessageHandler {
     }
   }
 
-  async handleAIResponse(message, chat) {
+    async handleAIResponse(message, chat) {
     try {
       const userId = message.author;
+      const isPrivateChat = !message.from.includes("@g.us");
       const { response, command, terminate } = await generateAIResponse(
         message.body,
         userId,
@@ -486,8 +487,8 @@ export class MessageHandler {
         await this.handleCommand(message, chat, command);
       }
 
-      // Terminate conversation if requested
-      if (terminate) {
+      // Only terminate conversation in group chats when requested
+      if (terminate && !isPrivateChat) {
         await message.react("✅");
         this.usersToRespondTo.delete(message.author);
         ChatHistoryManager.clearHistory(userId);
