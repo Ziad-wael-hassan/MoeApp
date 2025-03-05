@@ -19,7 +19,7 @@ const CONFIG = {
 
 const TIKTOK_RATE_LIMIT = {
   lastRequestTime: 0,
-  minInterval: 1000, // 1 second in milliseconds
+  minInterval: 2000, // 1 second in milliseconds
 };
 
 // Configure axios instance with improved settings
