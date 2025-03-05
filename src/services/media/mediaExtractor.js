@@ -17,6 +17,11 @@ const CONFIG = {
   DEFAULT_TIMEOUT: 30000, // 30 seconds
 };
 
+const TIKTOK_RATE_LIMIT = {
+  lastRequestTime: 0,
+  minInterval: 1000, // 1 second in milliseconds
+};
+
 // Configure axios instance with improved settings
 const axiosInstance = axios.create({
   timeout: CONFIG.DEFAULT_TIMEOUT,
@@ -76,16 +81,27 @@ async function extractInstagramMedia(url) {
   }
 }
 
-// TikTok media extraction
 async function extractTikTokMedia(url) {
   try {
+    // Simple rate limiting implementation
+    const now = Date.now();
+    const timeSinceLastRequest = now - TIKTOK_RATE_LIMIT.lastRequestTime;
+    
+    if (timeSinceLastRequest < TIKTOK_RATE_LIMIT.minInterval) {
+      // Wait for the remaining time if needed
+      const waitTime = TIKTOK_RATE_LIMIT.minInterval - timeSinceLastRequest;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    // Update last request time before making the request
+    TIKTOK_RATE_LIMIT.lastRequestTime = Date.now();
+    
     logger.debug("Fetching TikTok media for URL:", url);
 
     const response = await axiosInstance.get("https://www.tikwm.com/api/", {
       params: { url },
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         Accept: "application/json",
         "Accept-Encoding": "application/json",
       },
@@ -94,9 +110,7 @@ async function extractTikTokMedia(url) {
     const { data } = response;
 
     if (!data || data.code !== 0) {
-      throw new Error(
-        `Failed to fetch TikTok media details. API Response: ${JSON.stringify(data)}`,
-      );
+      throw new Error(`Failed to fetch TikTok media details. API Response: ${JSON.stringify(data)}`);
     }
 
     if (!data.data) {
