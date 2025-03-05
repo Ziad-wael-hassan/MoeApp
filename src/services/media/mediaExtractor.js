@@ -236,14 +236,38 @@ async function withRetry(fn, options = {}) {
 }
 
 // Extract URLs from message
-function extractUrl(messageBody) {
-  if (!messageBody || typeof messageBody !== "string") return null;
+// mediaExtractor.js
+// [Previous imports remain the same...]
 
-  for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
-    const match = messageBody.match(pattern);
-    if (match && match[0]) return { url: match[0], platform };
+// Extract URLs from message
+function extractUrls(messageBody) {
+  if (!messageBody || typeof messageBody !== "string") return [];
+
+  const foundUrls = [];
+  const excludePatterns = [/https?:\/\/(?:www\.)?tiktok\.com\/tiktoklite/i];
+
+  // Split message by whitespace to handle multiple URLs
+  const words = messageBody.split(/\s+/);
+
+  for (const word of words) {
+    // Skip if word matches any exclude pattern
+    if (excludePatterns.some((pattern) => pattern.test(word))) {
+      continue;
+    }
+
+    for (const [platform, pattern] of Object.entries(MEDIA_PATTERNS)) {
+      const match = word.match(pattern);
+      if (match && match[0]) {
+        foundUrls.push({
+          url: match[0],
+          platform,
+        });
+        break; // Stop checking other patterns once we find a match for this URL
+      }
+    }
   }
-  return null;
+
+  return foundUrls;
 }
 
 // Download media from URL
@@ -266,39 +290,55 @@ async function downloadMedia(url) {
 }
 
 // Process and send media
-async function processAndSendMedia(url, platform, message) {
-  const extractors = {
-    instagram: extractInstagramMedia,
-    tiktok: extractTikTokMedia,
-    facebook: extractFacebookMedia,
-    soundcloud: extractSoundCloudMedia,
-  };
+async function processAndSendMedia(urls, message) {
+  const results = [];
 
-  const extractor = extractors[platform];
-  if (!extractor) {
-    throw new Error(`No extractor available for platform: ${platform}`);
+  for (const { url, platform } of urls) {
+    try {
+      const extractors = {
+        instagram: extractInstagramMedia,
+        tiktok: extractTikTokMedia,
+        facebook: extractFacebookMedia,
+        soundcloud: extractSoundCloudMedia,
+      };
+
+      const extractor = extractors[platform];
+      if (!extractor) {
+        throw new Error(`No extractor available for platform: ${platform}`);
+      }
+
+      const mediaResult = await extractor(url);
+
+      if (platform === "soundcloud" && mediaResult.buffer) {
+        const media = new MessageMedia(
+          mediaResult.mimeType,
+          mediaResult.buffer.toString("base64"),
+        );
+        await message.reply(media);
+        results.push({ url, platform, success: true });
+        continue;
+      }
+
+      const mediaUrls = Array.isArray(mediaResult)
+        ? mediaResult
+        : [mediaResult];
+
+      for (const mediaUrl of mediaUrls) {
+        const { base64, mimeType } = await downloadMedia(mediaUrl);
+        const media = new MessageMedia(mimeType, base64);
+        await message.reply(media);
+      }
+
+      results.push({ url, platform, success: true });
+    } catch (error) {
+      logger.error(
+        `Failed to process ${platform} URL ${url}: ${error.message}`,
+      );
+      results.push({ url, platform, success: false, error: error.message });
+    }
   }
 
-  const mediaResult = await extractor(url);
-
-  if (platform === "soundcloud" && mediaResult.buffer) {
-    const media = new MessageMedia(
-      mediaResult.mimeType,
-      mediaResult.buffer.toString("base64"),
-    );
-    await message.reply(media);
-    return true;
-  }
-
-  const mediaUrls = Array.isArray(mediaResult) ? mediaResult : [mediaResult];
-
-  for (const mediaUrl of mediaUrls) {
-    const { base64, mimeType } = await downloadMedia(mediaUrl);
-    const media = new MessageMedia(mimeType, base64);
-    await message.reply(media);
-  }
-
-  return true;
+  return results;
 }
 
 // Main handler for media extraction
@@ -306,10 +346,8 @@ export async function handleMediaExtraction(message) {
   if (!message?.body) return { processed: false };
 
   try {
-    const extracted = extractUrl(message.body);
-    if (!extracted) return { processed: false };
-
-    const { url, platform } = extracted;
+    const extractedUrls = extractUrls(message.body);
+    if (extractedUrls.length === 0) return { processed: false };
 
     // Show typing indicator
     try {
@@ -327,20 +365,32 @@ export async function handleMediaExtraction(message) {
       ),
     );
 
-    const processingPromise = processAndSendMedia(url, platform, message);
+    const processingPromise = processAndSendMedia(extractedUrls, message);
 
-    const success = await Promise.race([
+    const results = await Promise.race([
       processingPromise,
       timeoutPromise,
     ]).catch((error) => {
       logger.error(`Media processing error: ${error.message}`);
-      return false;
+      return extractedUrls.map(({ url, platform }) => ({
+        url,
+        platform,
+        success: false,
+        error: error.message,
+      }));
     });
 
-    return {
-      processed: success,
+    const anySuccess = results.some((result) => result.success);
+    const allResults = results.map(({ url, platform, success, error }) => ({
       url,
       platform,
+      success,
+      ...(error && { error }),
+    }));
+
+    return {
+      processed: anySuccess,
+      results: allResults,
     };
   } catch (error) {
     logger.error(`Error in handling media extraction: ${error.message}`, {
@@ -348,7 +398,7 @@ export async function handleMediaExtraction(message) {
     });
     try {
       await message.reply(
-        "Sorry, I couldn't process that media link. Please try again later.",
+        "Sorry, I couldn't process the media link(s). Please try again later.",
       );
     } catch (replyError) {
       // Ignore errors when trying to send failure message
