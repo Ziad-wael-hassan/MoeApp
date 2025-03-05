@@ -1,9 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { logger } from "../../utils/logger.js";
 import { env } from "../../config/env.js";
-import { AI_CONFIG } from "../../config/aiConfig.js";
+import { AI_CONFIG, buildPrompt } from "../../config/aiConfig.js";
 
-export async function generateAIResponse(userMessage, userId) {
+export async function generateAIResponse(userMessage, userId, context = {}) {
   const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 
   const model = genAI.getGenerativeModel({
@@ -15,13 +15,23 @@ export async function generateAIResponse(userMessage, userId) {
     // Get the user's chat history
     const chatHistory = getChatHistory(userId);
 
+    // Build the complete prompt with context
+    const promptContext = {
+      currentTime: new Date().toISOString(),
+      chatHistory: chatHistory,
+      quotedMessage: context.quotedMessage,
+      isPrivateChat: context.isPrivateChat,
+    };
+
+    const fullPrompt = buildPrompt(promptContext);
+
     const chatSession = model.startChat({
       history: chatHistory,
       responseSchema: AI_CONFIG.prompt.responseSchema,
     });
 
     const result = await chatSession.sendMessage(
-      `${AI_CONFIG.prompt.base}\n\n${JSON.stringify(AI_CONFIG.prompt.examples, null, 2)}\n\nUser: "${userMessage}"`,
+      `${fullPrompt}\n\nUser: "${userMessage}"`,
     );
 
     return processResponse(result, userMessage, userId);

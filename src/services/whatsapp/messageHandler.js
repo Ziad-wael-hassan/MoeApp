@@ -489,13 +489,37 @@ export class MessageHandler {
     try {
       const userId = message.author;
       const isPrivateChat = !message.from.includes("@g.us");
+
+      // Get quoted message if exists
+      let quotedMessage = null;
+      if (message.hasQuotedMsg) {
+        const quoted = await message.getQuotedMessage();
+        quotedMessage = quoted.body;
+      }
+
+      // Get chat history for private chats
+      let chatHistory = [];
+      if (isPrivateChat) {
+        const messages = await chat.fetchMessages({ limit: 100 });
+        chatHistory = messages.map((msg) => ({
+          role: msg.fromMe ? "assistant" : "user",
+          content: msg.body,
+        }));
+      }
+
+      const context = {
+        isPrivateChat,
+        quotedMessage,
+        chatHistory,
+      };
+
       const { response, command, terminate } = await generateAIResponse(
         message.body,
         userId,
+        context,
       );
 
       await message.reply(response);
-
       // Handle command if AI generated one
       if (command) {
         await this.handleCommand(message, chat, command);
