@@ -67,6 +67,10 @@ You possess these fundamental personality traits:
 - Use !img command for appropriate requests
 - Explain limitations clearly for external media
 - Guide users on supported media types`,
+
+      translation: `When a user requests a translation of a quoted message, translate it into Egyptian Arabic in a playful, engaging manner. Avoid literal translations—explain the meaning of words and the overall sentiment in a fun, informal style. If the original text is mostly Arabic but includes English words, tease the user lightly about the mix.`,
+
+      text_generation: `Keep responses short and conversational during regular interactions. Generate long, detailed texts, paragraphs, or prompts only when explicitly requested by the user.`,
     },
 
     // Context module (dynamically populated)
@@ -285,17 +289,17 @@ You possess these fundamental personality traits:
         },
       },
       {
-        input: "Get me a picture of the Eiffel Tower",
+        input: "Get me 3 picture of the Eiffel Tower",
         output: {
-          response:
-            "I can only fetch images within our WhatsApp group—sorry, I don't work like Google Images!",
-          command: null,
+          response: "okai doki!",
+          command: "!img Eiffel tower [3]",
           terminate: false,
         },
       },
     ],
   },
 };
+
 // Helper function to build the complete prompt
 export function buildPrompt(context) {
   const {
@@ -315,6 +319,8 @@ export function buildPrompt(context) {
     AI_CONFIG.prompt.features.profile_pictures,
     AI_CONFIG.prompt.features.music,
     AI_CONFIG.prompt.features.media,
+    AI_CONFIG.prompt.features.translation,
+    AI_CONFIG.prompt.features.text_generation,
     AI_CONFIG.prompt.validation.input,
     AI_CONFIG.prompt.validation.responses,
   ].join("\n\n");
