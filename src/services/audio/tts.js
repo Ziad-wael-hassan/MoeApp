@@ -82,13 +82,20 @@ function validateAndCleanText(text) {
     throw new ValidationError("Input must be a string");
   }
 
+  // Remove markdown and trim
   const cleanText = removeMarkdown(text).trim();
 
+  // Handle empty or whitespace-only text
   if (cleanText.length < CONFIG.MIN_TEXT_LENGTH) {
     throw new ValidationError("Text is empty after cleaning");
   }
 
-  return cleanText;
+  // Remove excessive whitespace
+  const normalizedText = cleanText
+    .replace(/\s+/g, " ") // Replace multiple spaces with single space
+    .replace(/[\r\n]+/g, " "); // Replace newlines with space
+
+  return normalizedText;
 }
 
 export async function textToSpeech(text, options = {}) {

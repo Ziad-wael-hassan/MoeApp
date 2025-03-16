@@ -152,6 +152,7 @@ async function generateVoiceResponse(text, message) {
     const contact = await message.getContact();
     const isMetaAI =
       contact.name === "Meta AI" || contact.pushname === "Meta AI";
+
     if (!isMetaAI) return;
 
     const client = whatsappClient.getClient();
@@ -159,21 +160,71 @@ async function generateVoiceResponse(text, message) {
       client,
       message.id._serialized,
     );
-    text = reloadedMessage.body;
 
-    // Remove the length check and always generate voice response for Meta AI messages
+    // Check if message has any text content
+    text = reloadedMessage.body;
+    if (!text || text.trim().length === 0) {
+      // If message contains only media, skip voice generation
+      if (reloadedMessage.hasMedia) {
+        logger.info(
+          "Skipping voice generation for media-only message from Meta AI",
+        );
+        return;
+      }
+      // If no text and no media, log warning and return
+      logger.warn("Empty message received from Meta AI");
+      return;
+    }
+
     const chat = await message.getChat();
     await ChatState.setRecording(chat);
-    const { base64, mimeType } = await textToSpeech(text);
-    const media = new MessageMedia(mimeType, base64);
-    await message.reply(media, chat.id._serialized, {
-      sendAudioAsVoice: true,
-    });
+
+    // Add try-catch specifically for TTS operation
+    try {
+      const { base64, mimeType } = await textToSpeech(text);
+      const media = new MessageMedia(mimeType, base64);
+      await message.reply(media, chat.id._serialized, {
+        sendAudioAsVoice: true,
+      });
+    } catch (ttsError) {
+      if (ttsError.name === "ValidationError" || ttsError.name === "TTSError") {
+        logger.warn(
+          {
+            err: ttsError,
+            messageId: message.id._serialized,
+            text: text.substring(0, 100), // Log first 100 chars for debugging
+          },
+          "TTS generation skipped due to validation",
+        );
+        return; // Silently skip TTS for validation errors
+      }
+      // Re-throw other errors
+      throw ttsError;
+    }
   } catch (error) {
-    logger.error({ err: error }, "Error generating voice for message");
+    logger.error(
+      {
+        err: error,
+        messageId: message.id._serialized,
+        hasMedia: message?.hasMedia,
+        messageType: message?.type,
+        textLength: text?.length,
+      },
+      "Error generating voice for message",
+    );
+
+    // Don't throw the error further, just log it
+    // This prevents the error from bubbling up to the main message handler
+  } finally {
+    // Ensure chat state is cleared even if there's an error
+    try {
+      const chat = await message.getChat();
+      await ChatState.clear(chat);
+    } catch (clearError) {
+      logger.error({ err: clearError }, "Error clearing chat state");
+    }
   }
 }
-
 /**
  * Check if a command will respond based on its requirements
  */
