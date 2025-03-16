@@ -43,6 +43,43 @@ async function isAdmin(message) {
   return adminNumbers.includes(contactNumber);
 }
 
+async function getSongDetails(url) {
+  try {
+    const response = await axios.get(
+      "https://elghamazy-moeify.hf.space/getSong",
+      {
+        params: { url },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        timeout: 30000, // 30-second timeout
+      },
+    );
+
+    const { title, artist, album, cover, urls } = response.data;
+
+    if (!title || !artist || !album || !urls) {
+      throw new Error("Invalid response format from API");
+    }
+
+    return {
+      title,
+      artist,
+      album,
+      cover,
+      urls,
+    };
+  } catch (error) {
+    logger.error({ err: error }, "Error fetching song details", {
+      url,
+      errorResponse: error.response?.data,
+      errorStatus: error.response?.status,
+    });
+    throw new Error("Failed to fetch song details. Please try again later.");
+  }
+}
+
 async function processSongDownload(message, trackData) {
   const chat = await message.getChat();
 
