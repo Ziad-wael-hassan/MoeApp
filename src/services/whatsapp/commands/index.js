@@ -151,45 +151,6 @@ async function processSongDownload(message, trackData) {
   }
 }
 
-async function fetchFile(url) {
-  try {
-    const response = await axios.get(url, {
-      responseType: "arraybuffer",
-      maxRedirects: 5,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-      },
-      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-    });
-
-    const contentType =
-      response.headers["content-type"] || "application/octet-stream";
-    const buffer = Buffer.from(response.data);
-    const contentDisposition = response.headers["content-disposition"];
-    let fileName = url.split("/").pop();
-
-    if (contentDisposition && contentDisposition.includes("filename=")) {
-      const matches = contentDisposition.match(/filename="(.+)"/);
-      if (matches && matches[1]) {
-        fileName = matches[1];
-      }
-    }
-
-    if (contentType.startsWith("text/html")) {
-      throw new Error("HTML content is not allowed");
-    }
-
-    return {
-      base64: buffer.toString("base64"),
-      mimeType: contentType,
-      fileName,
-    };
-  } catch (error) {
-    throw new Error(`Failed to fetch file: ${error.message}`);
-  }
-}
-
 async function notifyAndDownloadSong(message, songData) {
   // Notify the user and process the download.
   const { title, artist } = songData;
@@ -939,32 +900,6 @@ export const commandHandlers = {
     }
   },
 
-  async dl(message, args) {
-    if (args.length === 0) {
-      await message.reply("Please provide a URL to download.");
-      return;
-    }
-
-    const url = args[0];
-    const chat = await message.getChat();
-
-    try {
-      await chat.sendStateTyping();
-
-      const { base64, mimeType, fileName } = await fetchFile(url);
-      const media = new MessageMedia(mimeType, base64, fileName);
-
-      await message.reply(media);
-      await chat.clearState();
-    } catch (error) {
-      logger.error({ err: error }, "Error in dl command:");
-      await chat.clearState();
-      await message.reply(
-        `Failed to download and send the file: ${error.message}`,
-      );
-    }
-  },
-
   async msg(message, args) {
     if (!(await isAdmin(message))) {
       await message.reply("This command is for admins only.");
@@ -1020,51 +955,6 @@ export const commandHandlers = {
       await removeShutupUser(message, args.slice(1));
     } else {
       await addShutupUser(message, args);
-    }
-  },
-
-  async remind(message, args) {
-    if (!(await isAdmin(message))) {
-      await message.reply("This command is for admins only.");
-      return;
-    }
-
-    if (args.length < 1) {
-      await message.reply(
-        "Usage: !remind <time in 24-hour format> [number/mention]",
-      );
-      return;
-    }
-
-    try {
-      let targetNumber;
-      if (args.length === 1 || args[0].toLowerCase() === "me") {
-        // Remind the user themselves
-        const contact = await message.getContact();
-        targetNumber = `${contact.number}@c.us`;
-        if (args[0].toLowerCase() === "me") {
-          args.shift(); // Remove "me" from args
-        }
-      } else if (message.mentionedIds.length > 0) {
-        targetNumber = message.mentionedIds[0];
-      } else {
-        targetNumber = `${args[1].replace(/[^0-9]/g, "")}@c.us`;
-      }
-
-      const time = args[0];
-      const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-      if (!timeRegex.test(time)) {
-        await message.reply(
-          "Invalid time format. Please use HH:MM in 24-hour format.",
-        );
-        return;
-      }
-
-      await scheduleReminder(targetNumber, time);
-      await message.reply(`Reminder scheduled to ${targetNumber} at ${time}.`);
-    } catch (error) {
-      logger.error({ err: error }, "Error in remind command:");
-      await message.reply("Failed to schedule reminder.");
     }
   },
 };

@@ -112,23 +112,6 @@ const CONFIG = {
       usage: "!msg <@mention or number> <message>",
     },
     {
-      name: "dl",
-      enabled: true,
-      adminOnly: false,
-      category: "utility",
-      description:
-        "Downloads a file from the provided URL and sends it back to the user",
-      usage: "!dl <URL>",
-    },
-    {
-      name: "remind",
-      enabled: true,
-      adminOnly: false,
-      category: "utility",
-      description: "Schedules a reminder for a specified user through the bot",
-      usage: "!remind <time in 24-hour format> [number/mention]",
-    },
-    {
       name: "shutup",
       enabled: true,
       adminOnly: true,
