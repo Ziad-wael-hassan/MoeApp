@@ -43,7 +43,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 USER node
 
 # Expose port
-EXPOSE 7860
+EXPOSE 8000
 
 # Start the application
 CMD ["npm", "run", "start"]
