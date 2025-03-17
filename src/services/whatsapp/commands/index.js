@@ -263,7 +263,7 @@ export const commandHandlers = {
       return acc;
     }, {});
 
-    let response = `📱 *MoeApp Commands*\n\n`;
+    let response = `📱 *bot Commands*\n\n`;
 
     for (const [category, cmds] of Object.entries(categorizedCommands)) {
       response += `🔹 *${category.toUpperCase()}*\n`;
