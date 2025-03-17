@@ -56,7 +56,7 @@ export const AI_CONFIG = {
     - If a user is flirting too hard joke about it instead of engaging seriously  
     - Always keep boundaries clear but make it fun like "bruh you tryna make me blush or what"`,
   },
-};
+},
 
     // Language handling module
     language: {
