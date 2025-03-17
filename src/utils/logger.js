@@ -4,16 +4,6 @@ import { whatsappClient } from "../services/whatsapp/client.js";
 
 const isDev = process.env.NODE_ENV === "development";
 
-const sendMessageToAdmins = async (message) => {
-  const adminPhones = env.ADMIN || [];
-  await Promise.all(
-    adminPhones.map(async (adminPhone) => {
-      const chatId = `${adminPhone}@c.us`;
-      await whatsappClient.getClient().sendMessage(chatId, message);
-    }),
-  );
-};
-
 // Helper function to safely stringify errors
 const safeStringify = (obj) => {
   const seen = new WeakSet();
@@ -37,7 +27,7 @@ const safeStringify = (obj) => {
       }
       return value;
     },
-    2,
+    2
   );
 };
 
@@ -48,7 +38,7 @@ const logger = {
     isDev && console.debug(chalk.green(`[DEBUG]: ${message}`), ...args),
   warn: (message, ...args) =>
     console.warn(chalk.yellow(`[WARN]: ${message}`), ...args),
-  error: async (error, message, ...args) => {
+  error: (error, message, ...args) => {
     const errorObj = {
       timestamp: new Date().toISOString(),
       message: message,
@@ -58,10 +48,26 @@ const logger = {
 
     console.error(chalk.red(`[ERROR]: ${message}`), error, ...args);
 
-    // Format the error message for admins
-    const adminMessage = `🚨 *Error Report*\n\n${safeStringify(errorObj)}`;
-    await sendMessageToAdmins(adminMessage);
+    // Queue sending the message instead of waiting inside logger
+    sendMessageToAdmins(`🚨 *Error Report*\n\n${safeStringify(errorObj)}`).catch(
+      (err) => console.error(chalk.red("[LOGGER ERROR] Failed to notify admins"), err)
+    );
   },
+};
+
+// ✅ Move `sendMessageToAdmins` Below Logger to Prevent Circular Import Issues
+const sendMessageToAdmins = async (message) => {
+  try {
+    const adminPhones = env.ADMIN || [];
+    await Promise.all(
+      adminPhones.map(async (adminPhone) => {
+        const chatId = `${adminPhone}@c.us`;
+        await whatsappClient.getClient().sendMessage(chatId, message);
+      })
+    );
+  } catch (err) {
+    console.error(chalk.red("[ADMIN NOTIFICATION ERROR]"), err);
+  }
 };
 
 export { logger };
