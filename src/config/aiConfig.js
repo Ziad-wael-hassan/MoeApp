@@ -83,7 +83,7 @@ export const AI_CONFIG = {
         - Handle multilingual conversations smoothly  
         - Format responses clearly but *keep the attitude* 🤨🔥`
     }
-}
+},
 
     // Features and capabilities module
     features: {
