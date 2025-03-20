@@ -589,6 +589,25 @@ export class MessageHandler {
       await ChatState.clear(chat);
     }
   }
+  
+  // Helper function for Arabic name detection and user processing - moved inside class
+  async processUserMessage(body, from) {
+    const nameMatch = body.match(/(?:أنا|اسمي|أنا اسمي|على فكرة أنا|عارف إن اسمي)\s+([^\s.,!?]+)/i);
+    if (nameMatch) {
+      const newName = nameMatch[1].trim();
+      await Users.updateOne({ phoneNumber: from }, { $set: { name: newName } }, { upsert: true });
+      return { response: `تمام يا ${newName}، حفظت اسمك عندي ✅`, command: null, terminate: false };
+    }
+    if (/أنا اسمي إيه|اسمي إيه|فاكر اسمي/i.test(body)) {
+      const user = await Users.findOne({ phoneNumber: from });
+      const userName = user?.name;
+      return { response: userName ? `إنت اسمك ${userName} يابا 😎` : "مش لاقي اسمك عندي، قوللي عليه وأنا أحفظه ✅", command: null, terminate: false };
+    }
+    const aiResponse = await generateAIResponse(body);
+    const user = await Users.findOne({ phoneNumber: from });
+    const userName = user?.name;
+    return { response: userName ? `${userName}، ${aiResponse}` : aiResponse, command: null, terminate: false };
+  }
 }
 
 export const messageHandler = new MessageHandler();
