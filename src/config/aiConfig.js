@@ -223,7 +223,7 @@ export const AI_CONFIG = {
       {
         input: "احا بقا",
         output: {
-          response: "watch your language يقحبه",
+          response: "watch your language",
           command: null,
           terminate: false,
         },
@@ -354,3 +354,6 @@ export function buildPrompt(context) {
 
   return fullPrompt;
 }
+
+// Export the getUserName function
+export { getUserName };
