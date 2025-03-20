@@ -81,5 +81,11 @@ export async function closeDB() {
     logger.info("Closed MongoDB connection");
   }
 }
+const userSchema = new mongoose.Schema({
+  phoneNumber: { type: String, unique: true },
+  name: String,
+  addedAt: { type: Date, default: Date.now },
+});
 
+export const Users = mongoose.model("Users", userSchema);
 export { Commands, Settings, MediaProcessing, ShutupUsers, StoryTracking };
