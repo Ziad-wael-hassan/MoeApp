@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import Papr, { schema, types } from "papr";
+import mongoose from "mongoose";
 import { logger } from "../utils/logger.js";
 import { env } from "./env.js";
 
