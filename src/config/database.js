@@ -1,6 +1,5 @@
 import { MongoClient } from "mongodb";
 import Papr, { schema, types } from "papr";
-import mongoose from "mongoose";
 import { logger } from "../utils/logger.js";
 import { env } from "./env.js";
 
@@ -63,6 +62,16 @@ const ShutupUsers = papr.model(
   }),
 );
 
+// Convert Users from mongoose to Papr
+const Users = papr.model(
+  "users",
+  schema({
+    phoneNumber: types.string({ required: true }),
+    name: types.string({ required: true }),
+    addedAt: types.date({ required: true, default: () => new Date() }),
+  }),
+);
+
 let client = null;
 
 export async function connectDB() {
@@ -82,11 +91,5 @@ export async function closeDB() {
     logger.info("Closed MongoDB connection");
   }
 }
-const userSchema = new mongoose.Schema({
-  phoneNumber: { type: String, unique: true },
-  name: String,
-  addedAt: { type: Date, default: Date.now },
-});
 
-export const Users = mongoose.model("Users", userSchema);
-export { Commands, Settings, MediaProcessing, ShutupUsers, StoryTracking };
+export { Commands, Settings, MediaProcessing, ShutupUsers, StoryTracking, Users };
