@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import Papr, { schema, types } from "papr";
+import mongoose from "mongoose";
 import { logger } from "../utils/logger.js";
 import { env } from "./env.js";
 
@@ -62,16 +63,6 @@ const ShutupUsers = papr.model(
   }),
 );
 
-// Convert Users from mongoose to Papr
-const Users = papr.model(
-  "users",
-  schema({
-    phoneNumber: types.string({ required: true }),
-    name: types.string({ required: true }),
-    addedAt: types.date({ required: true, default: () => new Date() }),
-  }),
-);
-
 let client = null;
 
 export async function connectDB() {
@@ -79,6 +70,10 @@ export async function connectDB() {
     client = await MongoClient.connect(env.MONGODB_URI);
     papr.initialize(client.db("whatsapp-bot-test-v1"));
     await papr.updateSchemas();
+    
+    // Initialize mongoose connection as well if you're using both
+    await mongoose.connect(env.MONGODB_URI);
+    logger.info("Connected to MongoDB");
   } catch (error) {
     logger.error({ err: error }, "MongoDB connection error");
     throw error;
@@ -88,8 +83,16 @@ export async function connectDB() {
 export async function closeDB() {
   if (client) {
     await client.close();
+    await mongoose.connection.close();
     logger.info("Closed MongoDB connection");
   }
 }
 
-export { Commands, Settings, MediaProcessing, ShutupUsers, StoryTracking, Users };
+const userSchema = new mongoose.Schema({
+  phoneNumber: { type: String, unique: true },
+  name: String,
+  addedAt: { type: Date, default: Date.now },
+});
+
+export const Users = mongoose.model("Users", userSchema);
+export { Commands, Settings, MediaProcessing, ShutupUsers, StoryTracking };
