@@ -22,7 +22,9 @@ RUN apt-get update \
 
 # Set up working directory
 WORKDIR /app
-
+# Create sessions directory and set permissions for the 'node' user
+RUN mkdir -p /app/sessions && chown -R node:node /app/sessions
+VOLUME /app/sessions
 # Copy package files
 COPY package.json ./
 
