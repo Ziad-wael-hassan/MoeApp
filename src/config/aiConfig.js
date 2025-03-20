@@ -1,3 +1,10 @@
+import { Users } from "../database.js"; 
+
+async function getUserName(phoneNumber) {
+  const user = await Users.findOne({ phoneNumber });
+  return user ? user.name : null;
+}
+
 // aiConfig.js
 export const AI_CONFIG = {
   model: {
