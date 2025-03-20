@@ -1,4 +1,4 @@
-import { Users } from "../database.js"; 
+import { Users } from "./database.js"; 
 
 async function getUserName(phoneNumber) {
   const user = await Users.findOne({ phoneNumber });
