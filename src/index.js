@@ -1,23 +1,18 @@
 import express from "express";
 import multer from "multer";
 import fs from "fs/promises";
-import fsn from "fs";
 import path from "path";
 import rateLimit from "express-rate-limit";
 import compression from "compression";
 import helmet from "helmet";
-import { whatsappClient } from "./services/whatsapp/client.js";
-import { messageHandler } from "./services/whatsapp/messageHandler.js";
-import wwebjs from "whatsapp-web.js";
+import makeWASocket, { DisconnectReason, useMultiFileAuthState } from "@adiwajshing/baileys";
 import { connectDB, closeDB } from "./config/database.js";
 import { logger } from "./utils/logger.js";
 import { env } from "./config/env.js";
 import dotenv from "dotenv";
-import { reloadScheduledReminders } from "./utils/scheduler.js";
 
 dotenv.config();
 const app = express();
-const { MessageMedia } = wwebjs;
 
 app.use(helmet());
 app.use(compression());
@@ -48,6 +43,29 @@ app.use(apiLimiter);
 // Set up file upload handling
 const upload = multer({ dest: path.join(process.cwd(), "uploads/") });
 
+let whatsappClient;
+
+async function initializeWhatsApp() {
+  const { state, saveCreds } = await useMultiFileAuthState("auth_data");
+  whatsappClient = makeWASocket({
+    auth: state,
+    printQRInTerminal: true,
+  });
+
+  whatsappClient.ev.on("creds.update", saveCreds);
+
+  whatsappClient.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === "close") {
+      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+        initializeWhatsApp();
+      }
+    } else if (connection === "open") {
+      logger.info("WhatsApp connected successfully.");
+    }
+  });
+}
+
 app.post(
   "/api/send-zip",
   [validateApiKey, upload.single("file")],
@@ -65,19 +83,22 @@ app.post(
       const filePath = req.file.path;
       logger.info("Received ZIP file for sending", { phoneNumber, filePath });
 
-      if (!whatsappClient.isAuthenticated) {
+      if (!whatsappClient) {
         return res
           .status(500)
-          .json({ error: "WhatsApp client is not authenticated" });
+          .json({ error: "WhatsApp client is not initialized" });
       }
 
-      // Create MessageMedia instance from file
-      const media = MessageMedia.fromFilePath(filePath);
-      media.filename = req.file.originalname || "file.zip";
-      media.mimetype = "application/zip";
+      // Read the file and convert it to a buffer
+      const fileBuffer = await fs.readFile(filePath);
+      const mimetype = "application/zip";
 
-      // Send file via WhatsApp using MessageMedia
-      await whatsappClient.client.sendMessage(phoneNumber, media);
+      // Send file via WhatsApp using Baileys
+      await whatsappClient.sendMessage(phoneNumber, {
+        document: fileBuffer,
+        mimetype,
+        fileName: req.file.originalname || "file.zip",
+      });
 
       logger.info("ZIP file sent successfully", { phoneNumber });
 
@@ -92,10 +113,45 @@ app.post(
     }
   },
 );
+
 app.get("/", (req, res) => {
   res.sendFile(`${process.cwd()}/public/index.html`);
 });
 
-app.post("/api/auth/pair", [validateApiKey, apiLimiter], async (req, res) => {
-  const { phone } = req.body;
-  if (!phone) {
+app.use((err, req, res, next) => {
+  logger.error("Express error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+// Initialize services
+async function initialize() {
+  try {
+    await connectDB();
+    await initializeWhatsApp();
+
+    app.listen(env.PORT, () => {
+      logger.debug(`Server is running on port ${env.PORT}`);
+    });
+  } catch (error) {
+    logger.error("Initialization error:", error);
+    process.exit(1);
+  }
+}
+
+async function shutdown(signal) {
+  logger.debug(`${signal} received. Starting graceful shutdown...`);
+
+  try {
+    await closeDB();
+    logger.debug("Graceful shutdown completed");
+    process.exit(0);
+  } catch (error) {
+    logger.error("Error during shutdown:", error);
+    process.exit(1);
+  }
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+initialize();
