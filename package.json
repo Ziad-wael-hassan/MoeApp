@@ -11,6 +11,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@adiwajshing/baileys": "^5.0.0",
     "@google/generative-ai": "^0.21.0",
     "@gradio/client": "^1.10.0",
     "@whiskeysockets/baileys": "^6.17.16",
