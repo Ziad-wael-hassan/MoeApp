@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { logger } from "../utils/logger.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -48,12 +47,16 @@ function validateEnv() {
       NODE_ENV: process.env.NODE_ENV || "production",
     };
   } catch (error) {
-    logger.error(
-      "Environment validation failed:",
-      JSON.stringify(error.errors, null, 2),
-    );
+    // Import logger dynamically to avoid circular dependency
+    import("../utils/logger.js").then(({ logger }) => {
+      logger.error(
+        "Environment validation failed:",
+        JSON.stringify(error.errors, null, 2)
+      );
+      process.exit(1);
+    });
 
-    process.exit(1);
+    throw error; // Rethrow so the process actually exits
   }
 }
 
