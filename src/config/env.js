@@ -13,15 +13,17 @@ const envSchema = z.object({
   HF_TOKEN: z.string(),
   API_KEY: z.string().min(32, "API key must be at least 32 characters"),
 
-  MONGODB_URI: z.string().url("Invalid MongoDB URI"),
+  MONGODB_URI: z
+    .string()
+    .refine((val) => val.startsWith("mongodb+srv://") || val.startsWith("mongodb://"), {
+      message: "Invalid MongoDB URI",
+    }),
 
   PORT: z
     .string()
     .transform((val) => Number.parseInt(val, 10))
     .default("3000"),
-  NODE_ENV: z
-    .enum(["development", "production", "test"])
-    .default("development"),
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 
   RATE_LIMIT_WINDOW_MS: z
     .string()
@@ -47,7 +49,6 @@ function validateEnv() {
       NODE_ENV: process.env.NODE_ENV || "production",
     };
   } catch (error) {
-    // Import logger dynamically to avoid circular dependency
     import("../utils/logger.js").then(({ logger }) => {
       logger.error(
         "Environment validation failed:",
@@ -56,7 +57,7 @@ function validateEnv() {
       process.exit(1);
     });
 
-    throw error; // Rethrow so the process actually exits
+    throw error;
   }
 }
 
